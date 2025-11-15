@@ -336,12 +336,15 @@ export default function JoinRoomDialog({
                     <div className="px-2 py-4 text-xs text-gray-500 text-center">
                       <div>No rooms available.</div>
                       <div className="text-[10px] mt-1">
-                        Set up database to see rooms.
+                        Rooms may still be loading. Check console for details.
                       </div>
                     </div>
                   ) : filteredRooms.length === 0 ? (
                     <div className="px-2 py-4 text-xs text-gray-500 text-center">
                       <div>No rooms in this category.</div>
+                      <div className="text-[10px] mt-1">
+                        Total rooms: {rooms.length}, Category: {selectedCategory}
+                      </div>
                       <div className="text-[10px] mt-1">
                         Try selecting a different category.
                       </div>

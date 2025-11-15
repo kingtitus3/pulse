@@ -174,8 +174,8 @@ export default function AppPage() {
             {
               event: 'INSERT',
               schema: 'public',
-              table: 'messages',
-              filter: `room_id=eq.${room.id}`,
+              table: 'Message',
+              filter: `roomId=eq.${room.id}`,
             },
             (payload: any) => {
               // Fetch the full message with user data
@@ -281,8 +281,13 @@ export default function AppPage() {
         isOpen={showJoinDialog}
         onClose={() => setShowJoinDialog(false)}
         onJoinRoom={(slug) => {
+          console.log('🎯 [JOIN] Joining room:', slug)
           setCurrentRoom(slug)
           setShowJoinDialog(false)
+          // Update URL without page reload
+          window.history.pushState({}, '', `/app?room=${slug}`)
+          // Force a re-render to load the room
+          setCurrentRoomData(null)
         }}
       />
     </div>

@@ -197,23 +197,27 @@ export default function AppPage() {
         console.error('❌ [MESSAGES] Failed to load messages:', error)
       })
 
-    // Load online users for this room
+    // Load online users for this room (with error handling)
     console.log('👥 [USERS] Fetching online users for room:', currentRoomSlug)
     fetch(`/api/rooms/${currentRoomSlug}/users`)
       .then((res) => {
         if (!res.ok) {
-          throw new Error(`Failed to fetch users: ${res.status}`)
+          console.warn('⚠️ [USERS] Users API returned:', res.status)
+          return { users: [], count: 0 }
         }
         return res.json()
       })
       .then((data) => {
-        console.log('✅ [USERS] Users received:', data.count, 'users')
+        console.log('✅ [USERS] Users received:', data.count || 0, 'users')
         if (Array.isArray(data.users)) {
           setOnlineUsers(currentRoomSlug, data.users)
+        } else {
+          setOnlineUsers(currentRoomSlug, [])
         }
       })
       .catch((error) => {
         console.error('❌ [USERS] Failed to load users:', error)
+        // Set empty array on error instead of crashing
         setOnlineUsers(currentRoomSlug, [])
       })
 
@@ -262,6 +266,11 @@ export default function AppPage() {
 
   const messages = currentRoomSlug ? messagesByRoom[currentRoomSlug] || [] : []
   
+  // Safety check - if something is wrong, show error instead of blank screen
+  if (typeof window === 'undefined') {
+    return null // SSR
+  }
+
   console.log('🖥️ [RENDER] Chat screen state:', {
     currentRoomSlug,
     messagesCount: messages.length,

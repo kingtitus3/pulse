@@ -159,15 +159,20 @@ export default function JoinRoomDialog({
   // Store user counts per room
   const [userCounts, setUserCounts] = useState<Record<string, number>>({})
 
-  // Fetch real user counts for all rooms
+  // Fetch real user counts for all rooms (with error handling)
   useEffect(() => {
     if (rooms.length === 0) return
+
+    let cancelled = false
 
     // Fetch user counts for all rooms
     Promise.all(
       rooms.map(async (room) => {
         try {
           const res = await fetch(`/api/rooms/${room.slug}/count`)
+          if (!res.ok) {
+            return { slug: room.slug, count: 0 }
+          }
           const data = await res.json()
           return { slug: room.slug, count: data.count || 0 }
         } catch (error) {
@@ -175,13 +180,30 @@ export default function JoinRoomDialog({
           return { slug: room.slug, count: 0 }
         }
       })
-    ).then((counts) => {
-      const countsMap: Record<string, number> = {}
-      counts.forEach(({ slug, count }) => {
-        countsMap[slug] = count
+    )
+      .then((counts) => {
+        if (cancelled) return
+        const countsMap: Record<string, number> = {}
+        counts.forEach(({ slug, count }) => {
+          countsMap[slug] = count
+        })
+        setUserCounts(countsMap)
       })
-      setUserCounts(countsMap)
-    })
+      .catch((error) => {
+        console.error('Failed to fetch user counts:', error)
+        // Set all to 0 on error
+        const countsMap: Record<string, number> = {}
+        rooms.forEach((room) => {
+          countsMap[room.slug] = 0
+        })
+        if (!cancelled) {
+          setUserCounts(countsMap)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [rooms])
 
   const getUserCount = (room: Room) => {

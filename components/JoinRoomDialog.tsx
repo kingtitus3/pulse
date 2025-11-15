@@ -218,8 +218,19 @@ export default function JoinRoomDialog({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white border-2 border-gray-400 shadow-2xl w-full max-w-[800px] h-[90vh] sm:h-[600px] max-h-[800px] flex flex-col">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4"
+      onClick={(e) => {
+        // Close dialog if clicking on overlay (not the dialog content)
+        if (e.target === e.currentTarget) {
+          onClose()
+        }
+      }}
+    >
+      <div 
+        className="bg-white border-2 border-gray-400 shadow-2xl w-full max-w-[800px] h-[90vh] sm:h-[600px] max-h-[800px] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* XP-style Title Bar */}
         <div
           className="yahoo-header flex justify-between items-center flex-shrink-0"
@@ -307,8 +318,13 @@ export default function JoinRoomDialog({
                   {CATEGORIES.map((cat) => (
                     <div
                       key={cat.id}
-                      onClick={() => setSelectedCategory(cat.id)}
-                      className={`px-2 py-1 text-xs cursor-pointer flex items-center gap-1 ${
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        console.log('📁 [DIALOG] Category clicked:', cat.id)
+                        setSelectedCategory(cat.id)
+                      }}
+                      className={`px-2 py-1 text-xs cursor-pointer flex items-center gap-1 touch-manipulation ${
                         selectedCategory === cat.id
                           ? 'bg-yellow-200 border-l-2 border-yellow-600'
                           : 'hover:bg-gray-100'

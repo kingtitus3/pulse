@@ -310,7 +310,7 @@ export default function JoinRoomDialog({
                       onClick={() => setSelectedCategory(cat.id)}
                       className={`px-2 py-1 text-xs cursor-pointer flex items-center gap-1 ${
                         selectedCategory === cat.id
-                          ? 'bg-blue-200'
+                          ? 'bg-yellow-200 border-l-2 border-yellow-600'
                           : 'hover:bg-gray-100'
                       }`}
                     >
@@ -370,7 +370,7 @@ export default function JoinRoomDialog({
                           }}
                           className={`px-2 py-2 sm:py-1 text-xs cursor-pointer touch-manipulation min-h-[44px] sm:min-h-0 flex items-center ${
                             isSelected
-                              ? 'bg-blue-200'
+                              ? 'bg-yellow-200 border-l-2 border-yellow-600'
                               : 'hover:bg-gray-100 active:bg-gray-200'
                           }`}
                         >

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { getSupabaseAdmin } from '@/lib/supabaseClient'
 
 const prisma = new PrismaClient()
 
@@ -26,14 +27,45 @@ export async function GET(req: NextRequest) {
     console.log('[ROOMS API] DATABASE_URL exists:', !!process.env.DATABASE_URL)
     console.log('[ROOMS API] DATABASE_URL starts with:', process.env.DATABASE_URL?.substring(0, 30))
     
-    const rooms = await prisma.room.findMany({
-      where,
-      orderBy,
-    })
+    let rooms
+    try {
+      // Try Prisma first
+      rooms = await prisma.room.findMany({
+        where,
+        orderBy,
+      })
+      console.log('[ROOMS API] Prisma found', rooms.length, 'rooms')
+    } catch (prismaError: any) {
+      console.warn('[ROOMS API] Prisma failed, trying Supabase API fallback:', prismaError.message)
+      
+      // Fallback to Supabase API
+      const supabase = getSupabaseAdmin()
+      let query = supabase.from('Room').select('*')
+      
+      if (!includeArchived) {
+        query = query.eq('archived', false)
+      }
+      
+      if (sort === 'activity') {
+        query = query.order('activityScore', { ascending: false })
+      } else {
+        query = query.order('createdAt', { ascending: false })
+      }
+      
+      const { data, error } = await query
+      
+      if (error) {
+        console.error('[ROOMS API] Supabase fallback error:', error.message)
+        throw error
+      }
+      
+      rooms = data || []
+      console.log('[ROOMS API] Supabase fallback found', rooms.length, 'rooms')
+    }
 
-    console.log('[ROOMS API] Found', rooms.length, 'rooms')
+    console.log('[ROOMS API] Found', rooms.length, 'rooms total')
     if (rooms.length > 0) {
-      console.log('[ROOMS API] Room slugs:', rooms.map(r => r.slug))
+      console.log('[ROOMS API] Room slugs:', rooms.map((r: any) => r.slug))
     } else {
       console.warn('[ROOMS API] No rooms found! This might indicate:')
       console.warn('[ROOMS API] 1. Database not seeded')

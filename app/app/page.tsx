@@ -152,22 +152,30 @@ export default function AppPage() {
       return
     }
 
+    let cancelled = false
+
     console.log('🔄 [ROOM] Loading room data for:', currentRoomSlug)
 
     // Get room data
     fetch(`/api/rooms/${currentRoomSlug}`)
       .then((res) => {
+        if (cancelled) return
         console.log('📡 [ROOM] Room fetch response:', res.status, res.ok)
         if (!res.ok) {
-          throw new Error(`Failed to fetch room: ${res.status}`)
+          console.warn('⚠️ [ROOM] Room fetch failed:', res.status)
+          return null
         }
         return res.json()
       })
       .then((data) => {
-        console.log('✅ [ROOM] Room data loaded:', data)
-        setCurrentRoomData(data)
+        if (cancelled) return
+        if (data) {
+          console.log('✅ [ROOM] Room data loaded:', data)
+          setCurrentRoomData(data)
+        }
       })
       .catch((error) => {
+        if (cancelled) return
         console.error('❌ [ROOM] Failed to load room:', error)
       })
 
@@ -175,52 +183,63 @@ export default function AppPage() {
     console.log('📨 [MESSAGES] Fetching messages for room:', currentRoomSlug)
     fetch(`/api/rooms/${currentRoomSlug}/messages?limit=50`)
       .then((res) => {
+        if (cancelled) return
         console.log('📡 [MESSAGES] Response status:', res.status, res.ok)
         if (!res.ok) {
-          throw new Error(`Failed to fetch messages: ${res.status}`)
+          console.warn('⚠️ [MESSAGES] Messages fetch failed:', res.status)
+          return []
         }
         return res.json()
       })
       .then((data) => {
+        if (cancelled) return
         console.log('✅ [MESSAGES] Messages received:', {
           isArray: Array.isArray(data),
           length: Array.isArray(data) ? data.length : 'not an array',
-          sample: Array.isArray(data) && data.length > 0 ? data[0] : null,
         })
         if (Array.isArray(data)) {
           console.log(`✨ [MESSAGES] Setting ${data.length} messages to store`)
           setMessages(currentRoomSlug, data)
         } else {
           console.warn('⚠️ [MESSAGES] Response is not an array:', data)
+          setMessages(currentRoomSlug, [])
         }
       })
       .catch((error) => {
+        if (cancelled) return
         console.error('❌ [MESSAGES] Failed to load messages:', error)
+        setMessages(currentRoomSlug, [])
       })
 
-    // Load online users for this room (with error handling)
-    console.log('👥 [USERS] Fetching online users for room:', currentRoomSlug)
-    fetch(`/api/rooms/${currentRoomSlug}/users`)
-      .then((res) => {
-        if (!res.ok) {
-          console.warn('⚠️ [USERS] Users API returned:', res.status)
-          return { users: [], count: 0 }
-        }
-        return res.json()
-      })
-      .then((data) => {
-        console.log('✅ [USERS] Users received:', data.count || 0, 'users')
-        if (Array.isArray(data.users)) {
-          setOnlineUsers(currentRoomSlug, data.users)
-        } else {
+    // Load online users for this room (with error handling) - make it non-blocking
+    setTimeout(() => {
+      if (cancelled) return
+      console.log('👥 [USERS] Fetching online users for room:', currentRoomSlug)
+      fetch(`/api/rooms/${currentRoomSlug}/users`)
+        .then((res) => {
+          if (cancelled) return
+          if (!res.ok) {
+            console.warn('⚠️ [USERS] Users API returned:', res.status)
+            return { users: [], count: 0 }
+          }
+          return res.json()
+        })
+        .then((data) => {
+          if (cancelled) return
+          console.log('✅ [USERS] Users received:', data.count || 0, 'users')
+          if (Array.isArray(data.users)) {
+            setOnlineUsers(currentRoomSlug, data.users)
+          } else {
+            setOnlineUsers(currentRoomSlug, [])
+          }
+        })
+        .catch((error) => {
+          if (cancelled) return
+          console.error('❌ [USERS] Failed to load users:', error)
+          // Set empty array on error instead of crashing
           setOnlineUsers(currentRoomSlug, [])
-        }
-      })
-      .catch((error) => {
-        console.error('❌ [USERS] Failed to load users:', error)
-        // Set empty array on error instead of crashing
-        setOnlineUsers(currentRoomSlug, [])
-      })
+        })
+    }, 500) // Delay user fetch to not block room loading
 
     // Subscribe to new messages via Supabase Realtime
     // Note: This requires Supabase Realtime to be enabled for the messages table
@@ -259,11 +278,12 @@ export default function AppPage() {
       .catch(console.error)
 
     return () => {
+      cancelled = true
       if (channel) {
         supabase.removeChannel(channel)
       }
     }
-  }, [currentRoomSlug, setMessages, addMessage])
+  }, [currentRoomSlug, setMessages, addMessage, setOnlineUsers])
 
   const messages = currentRoomSlug ? messagesByRoom[currentRoomSlug] || [] : []
   

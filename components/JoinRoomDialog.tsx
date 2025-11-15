@@ -37,11 +37,11 @@ export default function JoinRoomDialog({
     console.log('📂 [DIALOG] Dialog opened')
     console.log('📂 [DIALOG] Rooms in store:', rooms.length)
     
-    // Always fetch fresh data when dialog opens
-    console.log('🔄 [DIALOG] Fetching rooms from API...')
+    // Always fetch fresh data when dialog opens, using the test endpoint
+    console.log('🔄 [DIALOG] Fetching rooms from /api/rooms/test...')
     setLoadingRooms(true)
     
-    fetch('/api/rooms?sort=activity', {
+    fetch('/api/rooms/test', {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache',
@@ -55,22 +55,25 @@ export default function JoinRoomDialog({
         return res.json()
       })
       .then((data) => {
+        // data is expected to be { success, count, rooms: [...] }
+        const roomsData = Array.isArray(data) ? data : Array.isArray(data.rooms) ? data.rooms : []
         console.log('📦 [DIALOG] Rooms data received:', {
-          isArray: Array.isArray(data),
-          length: Array.isArray(data) ? data.length : 'not an array',
-          sample: Array.isArray(data) && data.length > 0 ? data[0] : null,
+          rawType: typeof data,
+          rawKeys: typeof data === 'object' && data !== null ? Object.keys(data) : null,
+          length: roomsData.length,
+          sample: roomsData.length > 0 ? roomsData[0] : null,
         })
         
-        if (Array.isArray(data) && data.length > 0) {
-          console.log('✅ [DIALOG] Setting', data.length, 'rooms to store')
-          console.log('📋 [DIALOG] Room types:', data.map((r: any) => ({ slug: r.slug, type: r.type, archived: r.archived })))
+        if (roomsData.length > 0) {
+          console.log('✅ [DIALOG] Setting', roomsData.length, 'rooms to store')
+          console.log('📋 [DIALOG] Room types:', roomsData.map((r: any) => ({ slug: r.slug, type: r.type, archived: r.archived })))
           
           // Update store
-          setRooms(data)
+          setRooms(roomsData)
           
           // Auto-select first category that has rooms
-          const coreRooms = data.filter((r: Room) => r.type === 'core')
-          const topicRooms = data.filter((r: Room) => r.type === 'topic' && !r.archived)
+          const coreRooms = roomsData.filter((r: Room) => r.type === 'core')
+          const topicRooms = roomsData.filter((r: Room) => r.type === 'topic' && !r.archived)
           console.log('📊 [DIALOG] Core rooms:', coreRooms.length, 'Topic rooms:', topicRooms.length)
           
           if (coreRooms.length > 0) {
@@ -79,7 +82,7 @@ export default function JoinRoomDialog({
           } else if (topicRooms.length > 0) {
             console.log('🎯 [DIALOG] Setting category to topics')
             setSelectedCategory('topics')
-          } else if (data.length > 0) {
+          } else if (roomsData.length > 0) {
             console.log('🎯 [DIALOG] Setting category to featured')
             setSelectedCategory('featured')
           }

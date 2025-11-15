@@ -57,10 +57,11 @@ export default function AppPage() {
   useEffect(() => {
     const loadRooms = async () => {
       try {
-        console.log('🔄 [ROOMS] Fetching rooms from /api/rooms...')
+        console.log('🔄 [ROOMS] Fetching rooms from /api/rooms/test...')
         setRoomsLoading(true)
         
-        const res = await fetch('/api/rooms?sort=activity', {
+        // Use the test endpoint which we know returns rooms reliably
+        const res = await fetch('/api/rooms/test', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -87,30 +88,34 @@ export default function AppPage() {
         }
         
         const data = await res.json()
+        // The test endpoint returns { success, count, rooms: [...] }
+        // For safety, also handle the case where it might already be an array.
+        const roomsData = Array.isArray(data) ? data : Array.isArray(data.rooms) ? data.rooms : []
+
         console.log('✅ [ROOMS] Data received:', {
-          type: typeof data,
-          isArray: Array.isArray(data),
-          length: data?.length,
-          data: data,
+          rawType: typeof data,
+          rawKeys: typeof data === 'object' && data !== null ? Object.keys(data) : null,
+          length: roomsData.length,
+          sample: roomsData[0] || null,
         })
         
-        if (Array.isArray(data) && data.length > 0) {
-          console.log(`✨ [ROOMS] Setting ${data.length} rooms to Zustand store`)
-          setRooms(data)
+        if (roomsData.length > 0) {
+          console.log(`✨ [ROOMS] Setting ${roomsData.length} rooms to Zustand store`)
+          setRooms(roomsData)
           // Check if room param is in URL
           const roomParam = searchParams?.get('room')
           if (roomParam) {
-            const room = data.find((r) => r.slug === roomParam)
+            const room = roomsData.find((r: any) => r.slug === roomParam)
             if (room) {
               console.log('🎯 [ROOMS] Setting current room from URL:', room.slug)
               setCurrentRoom(room.slug)
             } else {
-              console.log('🎯 [ROOMS] Setting current room to:', data[0].slug)
-              setCurrentRoom(data[0].slug)
+              console.log('🎯 [ROOMS] Setting current room to:', roomsData[0].slug)
+              setCurrentRoom(roomsData[0].slug)
             }
           } else {
-            console.log('🎯 [ROOMS] Setting current room to:', data[0].slug)
-            setCurrentRoom(data[0].slug)
+            console.log('🎯 [ROOMS] Setting current room to:', roomsData[0].slug)
+            setCurrentRoom(roomsData[0].slug)
           }
           console.log('✅ [ROOMS] Rooms loaded successfully!')
         } else {

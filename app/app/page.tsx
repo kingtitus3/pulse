@@ -32,9 +32,16 @@ export default function AppPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [showJoinDialog, setShowJoinDialog] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  // Ensure we're on client
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Load user session
   useEffect(() => {
+    if (!mounted) return
     const loadUser = async () => {
       try {
         await fetch('/api/session/ensure')
@@ -50,10 +57,12 @@ export default function AppPage() {
       }
     }
     loadUser()
-  }, [setMe])
+  }, [mounted, setMe])
 
   // Load rooms on mount
   useEffect(() => {
+    if (!mounted) return
+
     const loadRooms = async () => {
       try {
         setLoading(true)
@@ -64,7 +73,8 @@ export default function AppPage() {
         })
 
         if (!res.ok) {
-          throw new Error(`Failed to load rooms: ${res.status}`)
+          const errorText = await res.text()
+          throw new Error(`Failed to load rooms: ${res.status} - ${errorText}`)
         }
 
         const data = await res.json()
@@ -101,11 +111,11 @@ export default function AppPage() {
     }
 
     loadRooms()
-  }, [setRooms, setCurrentRoom, searchParams, router])
+  }, [mounted, setRooms, setCurrentRoom, searchParams, router])
 
   // Load room data and messages when room changes
   useEffect(() => {
-    if (!currentRoomSlug) return
+    if (!mounted || !currentRoomSlug) return
 
     let cancelled = false
     let channel: any = null
@@ -194,7 +204,7 @@ export default function AppPage() {
         supabase.removeChannel(channel)
       }
     }
-  }, [currentRoomSlug, setMessages, addMessage, setOnlineUsers])
+  }, [mounted, currentRoomSlug, setMessages, addMessage, setOnlineUsers])
 
   const handleJoinRoom = useCallback(
     (slug: string) => {
@@ -209,24 +219,33 @@ export default function AppPage() {
 
   const messages = currentRoomSlug ? messagesByRoom[currentRoomSlug] || [] : []
 
-  if (typeof window === 'undefined') {
-    return null
+  // Always render something - even if not mounted yet
+  if (!mounted) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gray-300">
+        <div className="text-center">
+          <div className="text-lg font-bold mb-2">Loading Pulse...</div>
+          <div className="text-sm text-gray-600">Initializing chat interface</div>
+        </div>
+      </div>
+    )
   }
 
   return (
     <ErrorBoundary>
-      <div className="h-screen flex bg-gray-300 overflow-hidden">
+      <div className="h-screen flex bg-gray-300 overflow-hidden" style={{ minHeight: '100vh' }}>
         {/* Left Panel - Chat Tools */}
         <ChatTools onJoinRoom={() => setShowJoinDialog(true)} />
 
         {/* Center Panel - Chat */}
-        <div className="flex-1 flex flex-col h-full bg-white">
+        <div className="flex-1 flex flex-col h-full bg-white" style={{ minWidth: 0 }}>
           {/* Top Bar */}
           <div
             className="yahoo-header flex justify-between items-center flex-shrink-0 px-4"
             style={{
               background:
                 'linear-gradient(to bottom, #1C54B3 0%, #3B7DD8 50%, #1C54B3 100%)',
+              minHeight: '40px',
             }}
           >
             <div className="flex items-center gap-4">
@@ -234,7 +253,7 @@ export default function AppPage() {
                 <span className="text-purple-300">Pulse</span>
               </div>
               <div className="text-white text-sm">
-                {loading ? 'Loading...' : currentRoom?.shortName || 'No Room'}
+                {loading ? 'Loading...' : currentRoom?.shortName || currentRoomSlug || 'No Room'}
               </div>
             </div>
             <div className="flex items-center gap-4 text-white text-sm">
@@ -256,12 +275,18 @@ export default function AppPage() {
           )}
 
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto bg-white min-h-0">
+          <div className="flex-1 overflow-y-auto bg-white min-h-0" style={{ minHeight: 0 }}>
             {loading ? (
               <div className="text-center text-gray-500 text-sm py-8">Loading rooms...</div>
             ) : !currentRoomSlug ? (
               <div className="text-center text-gray-500 text-sm py-8">
-                Select a room to start chatting
+                <div>Select a room to start chatting</div>
+                <button
+                  onClick={() => setShowJoinDialog(true)}
+                  className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Join Room
+                </button>
               </div>
             ) : messages.length === 0 ? (
               <div className="text-center text-gray-500 text-sm py-8">

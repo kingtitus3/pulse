@@ -1,0 +1,290 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { useChatStore } from '@/store/useChatStore'
+import { useMeStore } from '@/store/useMeStore'
+import ChatTools from '@/components/ChatTools'
+import ChatMessage from '@/components/ChatMessage'
+import MessageInput from '@/components/MessageInput'
+import ChattersList from '@/components/ChattersList'
+import ProfilePopup from '@/components/ProfilePopup'
+import JoinRoomDialog from '@/components/JoinRoomDialog'
+import { supabase } from '@/lib/supabaseClient'
+
+
+export default function AppPage() {
+  const searchParams = useSearchParams()
+  const {
+    rooms,
+    currentRoomSlug,
+    messagesByRoom,
+    setRooms,
+    setCurrentRoom,
+    setMessages,
+    addMessage,
+  } = useChatStore()
+  const { user, setMe, isLoading } = useMeStore()
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [currentRoom, setCurrentRoomData] = useState<any>(null)
+  const [dbError, setDbError] = useState<string | null>(null)
+  const [roomsLoading, setRoomsLoading] = useState(true)
+  const [showJoinDialog, setShowJoinDialog] = useState(false)
+
+  // Ensure session and load user data
+  useEffect(() => {
+    fetch('/api/session/ensure')
+      .then(() => fetch('/api/me'))
+      .then((res) => {
+        if (!res.ok && res.status === 503) {
+          setDbError('Database not configured. Please set up your database connection in .env')
+          return { error: 'Database not configured' }
+        }
+        return res.json()
+      })
+      .then((data) => {
+        if (data.user) {
+          setMe(data)
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load user:', error)
+        setDbError('Failed to connect to database')
+      })
+  }, [setMe])
+
+  // Load rooms - run once on mount
+  useEffect(() => {
+    const loadRooms = async () => {
+      try {
+        console.log('🔄 [ROOMS] Fetching rooms from /api/rooms...')
+        setRoomsLoading(true)
+        
+        const res = await fetch('/api/rooms?sort=activity', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+        })
+        
+        console.log('📡 [ROOMS] Response:', {
+          status: res.status,
+          ok: res.ok,
+          statusText: res.statusText,
+          headers: Object.fromEntries(res.headers.entries()),
+        })
+        
+        if (!res.ok) {
+          const errorText = await res.text()
+          console.error('❌ [ROOMS] Error response:', errorText)
+          if (res.status === 500) {
+            setDbError('Database not configured. Please set up your database connection.')
+            setRoomsLoading(false)
+            return
+          }
+          throw new Error(`HTTP ${res.status}: ${errorText}`)
+        }
+        
+        const data = await res.json()
+        console.log('✅ [ROOMS] Data received:', {
+          type: typeof data,
+          isArray: Array.isArray(data),
+          length: data?.length,
+          data: data,
+        })
+        
+        if (Array.isArray(data) && data.length > 0) {
+          console.log(`✨ [ROOMS] Setting ${data.length} rooms to Zustand store`)
+          setRooms(data)
+          // Check if room param is in URL
+          const roomParam = searchParams?.get('room')
+          if (roomParam) {
+            const room = data.find((r) => r.slug === roomParam)
+            if (room) {
+              console.log('🎯 [ROOMS] Setting current room from URL:', room.slug)
+              setCurrentRoom(room.slug)
+            } else {
+              console.log('🎯 [ROOMS] Setting current room to:', data[0].slug)
+              setCurrentRoom(data[0].slug)
+            }
+          } else {
+            console.log('🎯 [ROOMS] Setting current room to:', data[0].slug)
+            setCurrentRoom(data[0].slug)
+          }
+          console.log('✅ [ROOMS] Rooms loaded successfully!')
+        } else {
+          console.warn('⚠️ [ROOMS] No rooms in response or empty array')
+          setDbError('No rooms found. Database may need seeding.')
+        }
+        setRoomsLoading(false)
+      } catch (error) {
+        console.error('❌ [ROOMS] Failed to load rooms:', error)
+        console.error('❌ [ROOMS] Error details:', {
+          message: (error as Error).message,
+          stack: (error as Error).stack,
+        })
+        setDbError('Failed to load rooms: ' + (error as Error).message)
+        setRoomsLoading(false)
+      }
+    }
+    
+    // Small delay to ensure component is mounted
+    const timer = setTimeout(() => {
+      loadRooms()
+    }, 100)
+    
+    return () => clearTimeout(timer)
+  }, [setRooms, setCurrentRoom, searchParams])
+
+  // Load messages for current room
+  useEffect(() => {
+    if (!currentRoomSlug) return
+
+    // Get room data
+    fetch(`/api/rooms/${currentRoomSlug}`)
+      .then((res) => res.json())
+      .then((data) => setCurrentRoomData(data))
+      .catch(console.error)
+
+    // Load initial messages
+    fetch(`/api/rooms/${currentRoomSlug}/messages?limit=50`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setMessages(currentRoomSlug, data)
+        }
+      })
+      .catch(console.error)
+
+    // Subscribe to new messages via Supabase Realtime
+    // Note: This requires Supabase Realtime to be enabled for the messages table
+    // Run: ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+    let channel: any = null
+
+    fetch(`/api/rooms/${currentRoomSlug}`)
+      .then((res) => res.json())
+      .then((room) => {
+        if (!room?.id) return
+
+        channel = supabase
+          .channel(`room-${room.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'messages',
+              filter: `room_id=eq.${room.id}`,
+            },
+            (payload: any) => {
+              // Fetch the full message with user data
+              fetch(`/api/rooms/${currentRoomSlug}/messages?limit=1`)
+                .then((res) => res.json())
+                .then((data) => {
+                  if (data.length > 0) {
+                    addMessage(currentRoomSlug, data[data.length - 1])
+                  }
+                })
+                .catch(console.error)
+            }
+          )
+          .subscribe()
+      })
+      .catch(console.error)
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [currentRoomSlug, setMessages, addMessage])
+
+  const messages = currentRoomSlug ? messagesByRoom[currentRoomSlug] || [] : []
+
+  return (
+    <div className="h-screen flex bg-gray-300 overflow-hidden">
+      {/* Left Panel - Chat Tools */}
+      <ChatTools onJoinRoom={() => setShowJoinDialog(true)} />
+
+      {/* Center Panel - Chat */}
+      <div className="flex-1 flex flex-col h-full bg-white">
+        {/* Top Bar */}
+        <div
+          className="yahoo-header flex justify-between items-center flex-shrink-0 px-4"
+          style={{
+            background:
+              'linear-gradient(to bottom, #1C54B3 0%, #3B7DD8 50%, #1C54B3 100%)',
+          }}
+        >
+          <div className="flex items-center gap-4">
+            <div className="text-white font-bold">
+              <span className="text-purple-300">Pulse</span>
+            </div>
+            <div className="text-white text-sm">
+              You are in {currentRoom?.shortName || 'No Room'}
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-white text-sm">
+            <a href="#" className="hover:underline" onClick={(e) => e.preventDefault()}>
+              Help
+            </a>
+            <span>|</span>
+            <a href="#" className="hover:underline" onClick={(e) => e.preventDefault()}>
+              Exit
+            </a>
+          </div>
+        </div>
+
+        {dbError && (
+          <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-2 text-xs">
+            <strong>Setup Required:</strong> {dbError}
+          </div>
+        )}
+
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto bg-white min-h-0">
+          {messages.length === 0 && !dbError && (
+            <div className="text-center text-gray-500 text-sm py-8">
+              No messages yet. Be the first to chat!
+            </div>
+          )}
+          {messages.map((msg, idx) => (
+            <ChatMessage
+              key={msg.id}
+              message={msg}
+              index={idx}
+              onUserClick={(userId) => setSelectedUserId(userId)}
+            />
+          ))}
+        </div>
+
+        {/* Input */}
+        {currentRoomSlug ? (
+          <MessageInput roomSlug={currentRoomSlug} />
+        ) : (
+          <div className="border-t-2 border-gray-400 bg-gray-100 p-2 text-sm text-gray-500 text-center">
+            Select a room to start chatting
+          </div>
+        )}
+      </div>
+
+      {/* Right Panel - Chatters */}
+      <ChattersList roomSlug={currentRoomSlug} />
+      {selectedUserId && (
+        <ProfilePopup
+          userId={selectedUserId}
+          onClose={() => setSelectedUserId(null)}
+        />
+      )}
+      <JoinRoomDialog
+        isOpen={showJoinDialog}
+        onClose={() => setShowJoinDialog(false)}
+        onJoinRoom={(slug) => {
+          setCurrentRoom(slug)
+          setShowJoinDialog(false)
+        }}
+      />
+    </div>
+  )
+}

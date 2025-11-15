@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #F0F0F0;
+    color: #000000;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+@layer components {
+  /* Yahoo-style scrollbar */
+  ::-webkit-scrollbar {
+    width: 16px;
+    height: 16px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #F0F0F0;
+    border: 1px solid #CCCCCC;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #CCCCCC;
+    border: 1px solid #999999;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #999999;
+  }
+
+  /* Yahoo chat header */
+  .yahoo-header {
+    background: linear-gradient(to bottom, #1C54B3 0%, #3B7DD8 50%, #1C54B3 100%);
+    color: #FFFFFF;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: bold;
+    border-bottom: 2px solid #999999;
+  }
+
+  /* Input fields - Yahoo style */
+  .input-yahoo {
+    background-color: #FFFFFF;
+    border: 1px solid #CCCCCC;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  .input-yahoo:focus {
+    outline: none;
+    border-color: #0066CC;
+  }
+
+  /* Buttons - Yahoo style */
+  .btn-yahoo {
+    background-color: #0066CC;
+    color: #FFFFFF;
+    border: 1px solid #999999;
+    padding: 0.25rem 1rem;
+    font-size: 0.875rem;
+    font-weight: normal;
+    cursor: pointer;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  .btn-yahoo:hover {
+    background-color: #0052A3;
+  }
+
+  .btn-yahoo:active {
+    background-color: #003366;
+  }
+
+  .btn-yahoo-secondary {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 1px solid #CCCCCC;
+    padding: 0.25rem 1rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  .btn-yahoo-secondary:hover {
+    background-color: #F0F0F0;
+  }
+
+  /* Message rows - Yahoo style */
+  .message-row-even {
+    background-color: #FFFFFF;
+  }
+
+  .message-row-odd {
+    background-color: #F9F9F9;
+  }
+
+  .message-row-hover {
+    background-color: #F0F0F0;
+  }
+
+  /* Shake animation for nudge */
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-2px); }
+    20%, 40%, 60%, 80% { transform: translateX(2px); }
+  }
+}
+

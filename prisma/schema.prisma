@@ -1,0 +1,208 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  displayName   String
+  avatar        String
+  isAnonymous   Boolean  @default(true)
+  role          String   @default("user") // "user" | "mod" | "admin"
+
+  bio           String?
+  tags          String[] @default([])
+  showWallets   Boolean  @default(true)
+
+  createdAt     DateTime @default(now())
+
+  sessions      Session[]
+  messages     Message[]
+  reports       Report[]   @relation("UserReports")
+  wallets       Wallet[]
+  stickerStats  UserStickerStats[]
+  bans          Ban[]
+
+  @@index([displayName])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipHash     String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Wallet {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  address        String
+  label          String?
+  isPrimary      Boolean  @default(false)
+  resolvedHandle String?
+  avatarUrl      String?
+
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([address])
+}
+
+model Room {
+  id             String    @id @default(cuid())
+  slug           String    @unique
+  type           String    // "core" | "topic"
+  parentSlug     String?
+  shortName      String
+  title          String
+  category       String
+  description    String?
+  tags           String[]  @default([])
+  nsfw           Boolean   @default(false)
+  slowModeSeconds Int      @default(0)
+  isFeatured     Boolean   @default(false)
+
+  archived       Boolean   @default(false)
+  expiresAt      DateTime?
+  activityScore  Int       @default(0)
+
+  createdAt      DateTime  @default(now())
+
+  messages       Message[]
+  bans           Ban[]
+  reports        Report[]   @relation("RoomReports")
+
+  @@index([slug])
+  @@index([type])
+  @@index([category])
+  @@index([archived, activityScore])
+}
+
+model Message {
+  id          String   @id @default(cuid())
+  roomId      String
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type        String   // "text" | "sticker" | "gif" | "image" | "system"
+  content     String?
+  mediaUrl    String?
+  width       Int?
+  height     Int?
+
+  createdAt   DateTime @default(now())
+  deletedAt  DateTime?
+
+  reports     Report[]
+
+  @@index([roomId, createdAt])
+  @@index([userId])
+  @@index([deletedAt])
+}
+
+model Ban {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([roomId, userId])
+  @@index([userId])
+}
+
+model Report {
+  id         String   @id @default(cuid())
+  messageId  String
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  reporterId String
+  reporter User     @relation("UserReports", fields: [reporterId], references: [id], onDelete: Cascade)
+  roomId     String?
+  room       Room?    @relation("RoomReports", fields: [roomId], references: [id], onDelete: Cascade)
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([messageId])
+  @@index([reporterId])
+  @@index([roomId])
+}
+
+model RateLimit {
+  id          String   @id @default(cuid())
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@index([key, windowStart])
+  @@unique([key, windowStart])
+}
+
+model StickerPack {
+  id           String       @id @default(cuid())
+  slug         String       @unique
+  name         String
+  description  String?
+  author       String?
+  basePath     String
+  kind         String       // "reaction" | "meme" | "character" | "chain" | "brand" | "other"
+  tags         String[]     @default([])
+  isNsfw       Boolean      @default(false)
+
+  totalUses    Int          @default(0)
+  recentUses   Int          @default(0)
+  lastUsedAt   DateTime?
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  stickers     Sticker[]
+  stats        UserStickerStats[]
+
+  @@index([kind])
+  @@index([isNsfw])
+}
+
+model Sticker {
+  id           String       @id @default(cuid())
+  packId       String
+  pack          StickerPack  @relation(fields: [packId], references: [id], onDelete: Cascade)
+  filename     String
+  emoji        String?
+  tags         String[]     @default([])
+  totalUses    Int          @default(0)
+  recentUses   Int          @default(0)
+  createdAt    DateTime     @default(now())
+
+  @@unique([packId, filename])
+  @@index([packId])
+}
+
+model UserStickerStats {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  packId       String
+  pack         StickerPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  totalUses    Int      @default(0)
+  lastUsedAt   DateTime?
+  favorite     Boolean  @default(false)
+
+  @@unique([userId, packId])
+  @@index([userId])
+}
+

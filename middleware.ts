@@ -32,11 +32,13 @@ export async function middleware(request: NextRequest) {
     // Production CSP (stricter)
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' https://cdn.vercel-insights.com",
+      // Allow Next.js inline scripts and eval in production so the app can run,
+      // while still restricting external origins.
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: https:",
-      "connect-src 'self' https://*.supabase.co https://api.tenor.com https://media.tenor.com",
-      "media-src 'self' https:",
+      "img-src 'self' data: https: blob:",
+      "connect-src 'self' https://*.supabase.co https://api.tenor.com https://media.tenor.com wss://*.supabase.co",
+      "media-src 'self' https: blob:",
       "frame-ancestors 'none'",
       "font-src 'self' data:",
     ].join('; ')

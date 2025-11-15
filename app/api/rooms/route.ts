@@ -29,55 +29,55 @@ export async function GET(req: NextRequest) {
     let usedFallback = false
     
     // ALWAYS use Supabase directly for production reliability
-    // Prisma connection can be unreliable in serverless environments
+    // Use the same simple query that works in /api/rooms/test
     try {
       console.log('[ROOMS API] Fetching from Supabase (primary method)...')
       const supabase = getSupabaseAdmin()
+      
+      // Build query step by step (same as test endpoint)
       let query = supabase.from('Room').select('*')
       
       if (!includeArchived) {
         query = query.eq('archived', false)
       }
       
-      if (sort === 'activity') {
-        query = query.order('activityScore', { ascending: false })
-      } else {
-        query = query.order('createdAt', { ascending: false })
-      }
-      
-      const { data, error } = await query
+      // Execute query first
+      let { data, error } = await query
       
       if (error) {
-        console.error('[ROOMS API] Supabase error:', error)
+        console.error('[ROOMS API] Supabase query error:', error)
         console.error('[ROOMS API] Supabase error code:', error.code)
         console.error('[ROOMS API] Supabase error message:', error.message)
         throw error
       }
       
+      // Sort in memory if needed (more reliable than Supabase order)
       if (data && data.length > 0) {
+        if (sort === 'activity') {
+          data = data.sort((a: any, b: any) => (b.activityScore || 0) - (a.activityScore || 0))
+        } else {
+          data = data.sort((a: any, b: any) => 
+            new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          )
+        }
+        
         rooms = data
         console.log('[ROOMS API] ✅ Supabase found', rooms.length, 'rooms')
         console.log('[ROOMS API] Room slugs:', rooms.map((r: any) => r.slug))
-        usedFallback = false // Actually using Supabase as primary
+        usedFallback = false
       } else {
-        console.warn('[ROOMS API] Supabase returned empty array')
-        // Try Prisma as fallback if Supabase returns empty
-        try {
-          console.log('[ROOMS API] Trying Prisma as fallback...')
-          rooms = await prisma.room.findMany({
-            where,
-            orderBy,
-          })
-          console.log('[ROOMS API] ✅ Prisma found', rooms.length, 'rooms')
-        } catch (prismaError: any) {
-          console.warn('[ROOMS API] Prisma fallback also failed:', prismaError.message)
-          rooms = []
-        }
+        console.warn('[ROOMS API] Supabase returned empty array or null')
+        console.warn('[ROOMS API] Data value:', data)
+        rooms = []
       }
     } catch (supabaseError: any) {
-      console.error('[ROOMS API] Supabase failed, trying Prisma fallback:', supabaseError.message)
+      console.error('[ROOMS API] Supabase failed:', supabaseError.message)
+      console.error('[ROOMS API] Error stack:', supabaseError.stack)
       usedFallback = true
+      
+      // Try Prisma as fallback
       try {
+        console.log('[ROOMS API] Trying Prisma as fallback...')
         rooms = await prisma.room.findMany({
           where,
           orderBy,

@@ -10,7 +10,7 @@ import MessageInput from '@/components/MessageInput'
 import ChattersList from '@/components/ChattersList'
 import ProfilePopup from '@/components/ProfilePopup'
 import JoinRoomDialog from '@/components/JoinRoomDialog'
-import { ErrorBoundary } from '@/components/ErrorBoundary'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import { supabase } from '@/lib/supabaseClient'
 
 

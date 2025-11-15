@@ -116,8 +116,9 @@ export default function AppPage() {
         const roomRes = await fetch(`/api/rooms/${currentRoomSlug}`)
         if (cancelled) return
 
+        let roomData = null
         if (roomRes.ok) {
-          const roomData = await roomRes.json()
+          roomData = await roomRes.json()
           if (!cancelled) {
             setCurrentRoomData(roomData)
           }
@@ -149,37 +150,34 @@ export default function AppPage() {
           })
 
         // Set up Realtime subscription
-        if (roomRes.ok) {
-          const roomData = await roomRes.json()
-          if (roomData?.id && !cancelled) {
-            channel = supabase
-              .channel(`room-${roomData.id}`)
-              .on(
-                'postgres_changes',
-                {
-                  event: 'INSERT',
-                  schema: 'public',
-                  table: 'Message',
-                  filter: `roomId=eq.${roomData.id}`,
-                },
-                async (payload: any) => {
-                  if (cancelled) return
-                  // Fetch the new message with user data
-                  try {
-                    const newMsgRes = await fetch(
-                      `/api/rooms/${currentRoomSlug}/messages?limit=1`
-                    )
-                    const newMessages = await newMsgRes.json()
-                    if (Array.isArray(newMessages) && newMessages.length > 0) {
-                      addMessage(currentRoomSlug, newMessages[newMessages.length - 1])
-                    }
-                  } catch (err) {
-                    console.error('Failed to fetch new message:', err)
+        if (roomData?.id && !cancelled) {
+          channel = supabase
+            .channel(`room-${roomData.id}`)
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'Message',
+                filter: `roomId=eq.${roomData.id}`,
+              },
+              async (payload: any) => {
+                if (cancelled) return
+                // Fetch the new message with user data
+                try {
+                  const newMsgRes = await fetch(
+                    `/api/rooms/${currentRoomSlug}/messages?limit=1`
+                  )
+                  const newMessages = await newMsgRes.json()
+                  if (Array.isArray(newMessages) && newMessages.length > 0) {
+                    addMessage(currentRoomSlug, newMessages[newMessages.length - 1])
                   }
+                } catch (err) {
+                  console.error('Failed to fetch new message:', err)
                 }
-              )
-              .subscribe()
-          }
+              }
+            )
+            .subscribe()
         }
       } catch (err) {
         if (!cancelled) {

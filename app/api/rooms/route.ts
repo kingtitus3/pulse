@@ -22,14 +22,32 @@ export async function GET(req: NextRequest) {
       orderBy.createdAt = 'desc'
     }
 
+    console.log('[ROOMS API] Fetching rooms with where:', JSON.stringify(where), 'orderBy:', JSON.stringify(orderBy))
+    console.log('[ROOMS API] DATABASE_URL exists:', !!process.env.DATABASE_URL)
+    console.log('[ROOMS API] DATABASE_URL starts with:', process.env.DATABASE_URL?.substring(0, 30))
+    
     const rooms = await prisma.room.findMany({
       where,
       orderBy,
     })
 
+    console.log('[ROOMS API] Found', rooms.length, 'rooms')
+    if (rooms.length > 0) {
+      console.log('[ROOMS API] Room slugs:', rooms.map(r => r.slug))
+    } else {
+      console.warn('[ROOMS API] No rooms found! This might indicate:')
+      console.warn('[ROOMS API] 1. Database not seeded')
+      console.warn('[ROOMS API] 2. All rooms are archived')
+      console.warn('[ROOMS API] 3. Database connection issue')
+    }
+
     return NextResponse.json(rooms)
   } catch (error: any) {
-    logger.error('Failed to get rooms', { error: error.message })
+    console.error('[ROOMS API] Error:', error.message)
+    console.error('[ROOMS API] Error code:', error.code)
+    console.error('[ROOMS API] Error stack:', error.stack)
+    logger.error('Failed to get rooms', { error: error.message, code: error.code })
+    
     // Return empty array if database connection fails
     if (
       error.message?.includes('connect') ||
@@ -37,9 +55,11 @@ export async function GET(req: NextRequest) {
       error.message?.includes('Can\'t reach database server') ||
       error.code === 'P1001'
     ) {
+      console.error('[ROOMS API] Database connection failed')
       return NextResponse.json([], { status: 200 })
     }
     // For other errors, still return empty array to prevent UI breakage
+    console.error('[ROOMS API] Unknown error, returning empty array')
     return NextResponse.json([], { status: 200 })
   }
 }

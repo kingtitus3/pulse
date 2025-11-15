@@ -102,16 +102,31 @@ export default function ChatTools({ onJoinRoom }: ChatToolsProps) {
             <div className="text-xs text-gray-700">
               <div className="mb-2 font-bold">Settings</div>
               <div className="space-y-1">
-                <label className="flex items-center gap-1">
-                  <input type="checkbox" className="w-3 h-3" />
+                <label className="flex items-center gap-1" htmlFor="settings-sound-alerts">
+                  <input
+                    id="settings-sound-alerts"
+                    name="settings-sound-alerts"
+                    type="checkbox"
+                    className="w-3 h-3"
+                  />
                   <span>Sound alerts</span>
                 </label>
-                <label className="flex items-center gap-1">
-                  <input type="checkbox" className="w-3 h-3" />
+                <label className="flex items-center gap-1" htmlFor="settings-show-timestamps">
+                  <input
+                    id="settings-show-timestamps"
+                    name="settings-show-timestamps"
+                    type="checkbox"
+                    className="w-3 h-3"
+                  />
                   <span>Show timestamps</span>
                 </label>
-                <label className="flex items-center gap-1">
-                  <input type="checkbox" className="w-3 h-3" />
+                <label className="flex items-center gap-1" htmlFor="settings-auto-scroll">
+                  <input
+                    id="settings-auto-scroll"
+                    name="settings-auto-scroll"
+                    type="checkbox"
+                    className="w-3 h-3"
+                  />
                   <span>Auto-scroll</span>
                 </label>
               </div>

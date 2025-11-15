@@ -37,10 +37,24 @@ export default function ChattersList({ roomSlug }: ChattersListProps) {
 
       {/* Menu Bar */}
       <div className="bg-gray-200 border-b border-gray-400 px-2 py-1 flex gap-2">
-        <select className="text-xs bg-white border border-gray-400 px-1 py-0.5 flex-1">
+        <label className="sr-only" htmlFor="chatters-menu-select">
+          Chatters menu
+        </label>
+        <select
+          id="chatters-menu-select"
+          name="chatters-menu"
+          className="text-xs bg-white border border-gray-400 px-1 py-0.5 flex-1"
+        >
           <option>Menu</option>
         </select>
-        <select className="text-xs bg-white border border-gray-400 px-1 py-0.5 flex-1">
+        <label className="sr-only" htmlFor="chatters-emotions-select">
+          Chatters emotions
+        </label>
+        <select
+          id="chatters-emotions-select"
+          name="chatters-emotions"
+          className="text-xs bg-white border border-gray-400 px-1 py-0.5 flex-1"
+        >
           <option>Emotions</option>
         </select>
       </div>

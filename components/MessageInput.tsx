@@ -255,12 +255,26 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
             <span className="text-xs" style={{ color: '#0066CC' }}>A</span>
           </button>
         </div>
-        <select className="text-xs border border-gray-400 bg-white px-1 py-0.5 h-6">
+        <label className="sr-only" htmlFor="font-family-select">
+          Font family
+        </label>
+        <select
+          id="font-family-select"
+          name="font-family"
+          className="text-xs border border-gray-400 bg-white px-1 py-0.5 h-6"
+        >
           <option>Arial</option>
           <option>Verdana</option>
           <option>Tahoma</option>
         </select>
-        <select className="text-xs border border-gray-400 bg-white px-1 py-0.5 h-6">
+        <label className="sr-only" htmlFor="font-size-select">
+          Font size
+        </label>
+        <select
+          id="font-size-select"
+          name="font-size"
+          className="text-xs border border-gray-400 bg-white px-1 py-0.5 h-6"
+        >
           <option>10</option>
           <option>12</option>
           <option>14</option>

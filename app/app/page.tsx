@@ -169,14 +169,31 @@ export default function AppPage() {
       })
 
     // Load initial messages
+    console.log('📨 [MESSAGES] Fetching messages for room:', currentRoomSlug)
     fetch(`/api/rooms/${currentRoomSlug}/messages?limit=50`)
-      .then((res) => res.json())
+      .then((res) => {
+        console.log('📡 [MESSAGES] Response status:', res.status, res.ok)
+        if (!res.ok) {
+          throw new Error(`Failed to fetch messages: ${res.status}`)
+        }
+        return res.json()
+      })
       .then((data) => {
+        console.log('✅ [MESSAGES] Messages received:', {
+          isArray: Array.isArray(data),
+          length: Array.isArray(data) ? data.length : 'not an array',
+          sample: Array.isArray(data) && data.length > 0 ? data[0] : null,
+        })
         if (Array.isArray(data)) {
+          console.log(`✨ [MESSAGES] Setting ${data.length} messages to store`)
           setMessages(currentRoomSlug, data)
+        } else {
+          console.warn('⚠️ [MESSAGES] Response is not an array:', data)
         }
       })
-      .catch(console.error)
+      .catch((error) => {
+        console.error('❌ [MESSAGES] Failed to load messages:', error)
+      })
 
     // Subscribe to new messages via Supabase Realtime
     // Note: This requires Supabase Realtime to be enabled for the messages table
@@ -222,6 +239,13 @@ export default function AppPage() {
   }, [currentRoomSlug, setMessages, addMessage])
 
   const messages = currentRoomSlug ? messagesByRoom[currentRoomSlug] || [] : []
+  
+  console.log('🖥️ [RENDER] Chat screen state:', {
+    currentRoomSlug,
+    messagesCount: messages.length,
+    messagesByRoomKeys: Object.keys(messagesByRoom),
+    currentRoomData: currentRoomData?.shortName || 'none',
+  })
 
   return (
     <div className="h-screen flex bg-gray-300 overflow-hidden">
@@ -265,19 +289,27 @@ export default function AppPage() {
 
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto bg-white min-h-0">
-          {messages.length === 0 && !dbError && (
+          {!currentRoomSlug ? (
             <div className="text-center text-gray-500 text-sm py-8">
-              No messages yet. Be the first to chat!
+              Select a room to start chatting
             </div>
+          ) : messages.length === 0 && !dbError ? (
+            <div className="text-center text-gray-500 text-sm py-8">
+              <div>No messages yet. Be the first to chat!</div>
+              <div className="text-xs text-gray-400 mt-2">
+                Room: {currentRoom?.shortName || currentRoomSlug}
+              </div>
+            </div>
+          ) : (
+            messages.map((msg, idx) => (
+              <ChatMessage
+                key={msg.id || `msg-${idx}`}
+                message={msg}
+                index={idx}
+                onUserClick={(userId) => setSelectedUserId(userId)}
+              />
+            ))
           )}
-          {messages.map((msg, idx) => (
-            <ChatMessage
-              key={msg.id}
-              message={msg}
-              index={idx}
-              onUserClick={(userId) => setSelectedUserId(userId)}
-            />
-          ))}
         </div>
 
         {/* Input */}

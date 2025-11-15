@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { useChatStore } from '@/store/useChatStore'
 import { useMeStore } from '@/store/useMeStore'
 import ChatTools from '@/components/ChatTools'
@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabaseClient'
 
 export default function AppPage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const {
     rooms,
     currentRoomSlug,
@@ -351,15 +352,15 @@ export default function AppPage() {
             setCurrentRoom(slug)
             console.log('🎯 [JOIN] setCurrentRoom called')
             
-            // Update URL
-            const newUrl = `/app?room=${slug}`
-            console.log('🎯 [JOIN] Updating URL to:', newUrl)
-            window.history.pushState({}, '', newUrl)
-            console.log('🎯 [JOIN] URL updated')
-            
-            // Close dialog
+            // Close dialog first
             setShowJoinDialog(false)
             console.log('🎯 [JOIN] Dialog closed')
+            
+            // Update URL using Next.js router (triggers re-render)
+            const newUrl = `/app?room=${slug}`
+            console.log('🎯 [JOIN] Navigating to:', newUrl)
+            router.push(newUrl)
+            console.log('🎯 [JOIN] Navigation triggered')
             
             // Force reload room data
             setCurrentRoomData(null)

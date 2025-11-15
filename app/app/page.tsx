@@ -139,13 +139,29 @@ export default function AppPage() {
 
   // Load messages for current room
   useEffect(() => {
-    if (!currentRoomSlug) return
+    if (!currentRoomSlug) {
+      console.log('⚠️ [ROOM] No currentRoomSlug, skipping room load')
+      return
+    }
+
+    console.log('🔄 [ROOM] Loading room data for:', currentRoomSlug)
 
     // Get room data
     fetch(`/api/rooms/${currentRoomSlug}`)
-      .then((res) => res.json())
-      .then((data) => setCurrentRoomData(data))
-      .catch(console.error)
+      .then((res) => {
+        console.log('📡 [ROOM] Room fetch response:', res.status, res.ok)
+        if (!res.ok) {
+          throw new Error(`Failed to fetch room: ${res.status}`)
+        }
+        return res.json()
+      })
+      .then((data) => {
+        console.log('✅ [ROOM] Room data loaded:', data)
+        setCurrentRoomData(data)
+      })
+      .catch((error) => {
+        console.error('❌ [ROOM] Failed to load room:', error)
+      })
 
     // Load initial messages
     fetch(`/api/rooms/${currentRoomSlug}/messages?limit=50`)
@@ -282,12 +298,45 @@ export default function AppPage() {
         onClose={() => setShowJoinDialog(false)}
         onJoinRoom={(slug) => {
           console.log('🎯 [JOIN] Joining room:', slug)
+          console.log('🎯 [JOIN] Current room before:', currentRoomSlug)
+          
+          // Set the room in the store first
           setCurrentRoom(slug)
-          setShowJoinDialog(false)
-          // Update URL without page reload
+          console.log('🎯 [JOIN] Room set in store')
+          
+          // Update URL
           window.history.pushState({}, '', `/app?room=${slug}`)
-          // Force a re-render to load the room
+          console.log('🎯 [JOIN] URL updated')
+          
+          // Close dialog
+          setShowJoinDialog(false)
+          
+          // Force reload room data
           setCurrentRoomData(null)
+          
+          // Manually trigger room load
+          fetch(`/api/rooms/${slug}`)
+            .then((res) => res.json())
+            .then((data) => {
+              console.log('✅ [JOIN] Room data loaded:', data)
+              setCurrentRoomData(data)
+            })
+            .catch((error) => {
+              console.error('❌ [JOIN] Failed to load room:', error)
+            })
+          
+          // Load messages
+          fetch(`/api/rooms/${slug}/messages?limit=50`)
+            .then((res) => res.json())
+            .then((data) => {
+              console.log('✅ [JOIN] Messages loaded:', data.length)
+              if (Array.isArray(data)) {
+                setMessages(slug, data)
+              }
+            })
+            .catch((error) => {
+              console.error('❌ [JOIN] Failed to load messages:', error)
+            })
         }}
       />
     </div>

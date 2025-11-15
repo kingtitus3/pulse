@@ -109,7 +109,13 @@ export default function JoinRoomDialog({
   }
 
   const handleGoToRoom = () => {
+    console.log('🚀 [DIALOG] handleGoToRoom called')
+    console.log('🚀 [DIALOG] selectedRoom:', selectedRoom)
+    console.log('🚀 [DIALOG] roomNameInput:', roomNameInput)
+    console.log('🚀 [DIALOG] rooms available:', rooms.length)
+    
     if (selectedRoom) {
+      console.log('✅ [DIALOG] Joining selected room:', selectedRoom.slug)
       onJoinRoom(selectedRoom.slug)
       onClose()
     } else if (roomNameInput.trim()) {
@@ -120,9 +126,14 @@ export default function JoinRoomDialog({
           r.slug === roomNameInput.trim().toLowerCase()
       )
       if (room) {
+        console.log('✅ [DIALOG] Found room by name:', room.slug)
         onJoinRoom(room.slug)
         onClose()
+      } else {
+        console.warn('⚠️ [DIALOG] Room not found by name:', roomNameInput)
       }
+    } else {
+      console.warn('⚠️ [DIALOG] No room selected and no room name entered')
     }
   }
 
@@ -297,7 +308,12 @@ export default function JoinRoomDialog({
               </a>
               <div className="flex gap-2">
                 <button
-                  onClick={handleGoToRoom}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    console.log('🔘 [DIALOG] Go to Room clicked, selectedRoom:', selectedRoom)
+                    handleGoToRoom()
+                  }}
                   disabled={!selectedRoom && !roomNameInput.trim()}
                   className="btn-yahoo text-xs px-4 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >

@@ -247,9 +247,7 @@ export default function AppPage() {
     currentRoom: currentRoom?.shortName || 'none',
   })
 
-  // Wrap in try-catch for error handling
-  try {
-    return (
+  return (
     <div className="h-screen flex bg-gray-300 overflow-hidden">
       {/* Left Panel - Chat Tools */}
       <ChatTools onJoinRoom={() => setShowJoinDialog(true)} />

@@ -57,19 +57,27 @@ export default function JoinRoomDialog({
     setLoadingRooms(true)
     fetch('/api/rooms?sort=activity')
       .then((res) => {
-        console.log('📡 [DIALOG] Rooms API response:', res.status)
+        console.log('📡 [DIALOG] Rooms API response:', res.status, res.ok)
         if (!res.ok) {
           throw new Error(`Failed to fetch rooms: ${res.status}`)
         }
         return res.json()
       })
       .then((data) => {
-        console.log('📦 [DIALOG] Rooms data received:', Array.isArray(data) ? data.length : 'not an array')
+        console.log('📦 [DIALOG] Rooms data received:', {
+          isArray: Array.isArray(data),
+          length: Array.isArray(data) ? data.length : 'not an array',
+          data: data
+        })
+        
         if (Array.isArray(data) && data.length > 0) {
+          console.log('✅ [DIALOG] Setting', data.length, 'rooms to store')
+          console.log('📋 [DIALOG] Room types:', data.map((r: any) => ({ slug: r.slug, type: r.type, archived: r.archived })))
           setRooms(data)
           // Auto-select first category that has rooms
           const coreRooms = data.filter((r: Room) => r.type === 'core')
           const topicRooms = data.filter((r: Room) => r.type === 'topic' && !r.archived)
+          console.log('📊 [DIALOG] Core rooms:', coreRooms.length, 'Topic rooms:', topicRooms.length)
           if (coreRooms.length > 0) {
             setSelectedCategory('core')
           } else if (topicRooms.length > 0) {
@@ -78,7 +86,7 @@ export default function JoinRoomDialog({
             setSelectedCategory('featured')
           }
         } else {
-          console.warn('⚠️ [DIALOG] No rooms in response')
+          console.warn('⚠️ [DIALOG] No rooms in response - data:', data)
         }
         setLoadingRooms(false)
       })
@@ -90,45 +98,60 @@ export default function JoinRoomDialog({
 
   // Filter rooms by category
   useEffect(() => {
+    console.log('🔄 [DIALOG] Filtering rooms - selectedCategory:', selectedCategory, 'rooms.length:', rooms.length)
+    
     if (rooms.length === 0) {
+      console.log('⚠️ [DIALOG] No rooms to filter')
       setFilteredRooms([])
       return
     }
 
+    let filtered: Room[] = []
+
     if (selectedCategory === 'core') {
-      const coreRooms = rooms.filter((r) => r.type === 'core')
-      setFilteredRooms(coreRooms)
+      filtered = rooms.filter((r) => r.type === 'core')
+      console.log('📊 [DIALOG] Core rooms filtered:', filtered.length, 'from', rooms.length)
+      setFilteredRooms(filtered)
       // If no core rooms, try to switch to a category that has rooms
-      if (coreRooms.length === 0) {
+      if (filtered.length === 0) {
         const topicRooms = rooms.filter((r) => r.type === 'topic' && !r.archived)
         if (topicRooms.length > 0) {
+          console.log('🔄 [DIALOG] Switching to topics category')
           setSelectedCategory('topics')
         } else if (rooms.length > 0) {
+          console.log('🔄 [DIALOG] Switching to featured category')
           setSelectedCategory('featured')
         }
       }
     } else if (selectedCategory === 'topics') {
-      const topicRooms = rooms.filter((r) => r.type === 'topic' && !r.archived)
-      setFilteredRooms(topicRooms)
+      filtered = rooms.filter((r) => r.type === 'topic' && !r.archived)
+      console.log('📊 [DIALOG] Topic rooms filtered:', filtered.length, 'from', rooms.length)
+      setFilteredRooms(filtered)
       // If no topic rooms, switch to core or featured
-      if (topicRooms.length === 0) {
+      if (filtered.length === 0) {
         const coreRooms = rooms.filter((r) => r.type === 'core')
         if (coreRooms.length > 0) {
+          console.log('🔄 [DIALOG] Switching to core category')
           setSelectedCategory('core')
         } else if (rooms.length > 0) {
+          console.log('🔄 [DIALOG] Switching to featured category')
           setSelectedCategory('featured')
         }
       }
     } else if (selectedCategory === 'featured') {
       // Featured = most active rooms (all rooms sorted by activity)
-      const featured = [...rooms]
+      filtered = [...rooms]
         .filter((r) => !r.archived)
         .sort((a, b) => (b.activityScore || 0) - (a.activityScore || 0))
         .slice(0, 20)
-      setFilteredRooms(featured)
+      console.log('📊 [DIALOG] Featured rooms filtered:', filtered.length, 'from', rooms.length)
+      setFilteredRooms(filtered)
     } else {
+      console.warn('⚠️ [DIALOG] Unknown category:', selectedCategory)
       setFilteredRooms([])
     }
+    
+    console.log('✅ [DIALOG] Filtered rooms set:', filtered.length)
   }, [selectedCategory, rooms])
 
   // Get user count for a room (placeholder - would need real-time data)

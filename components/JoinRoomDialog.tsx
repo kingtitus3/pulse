@@ -156,10 +156,36 @@ export default function JoinRoomDialog({
     console.log('✅ [DIALOG] Filtered rooms set:', filtered.length)
   }, [selectedCategory, rooms])
 
-  // Get user count for a room (placeholder - would need real-time data)
+  // Store user counts per room
+  const [userCounts, setUserCounts] = useState<Record<string, number>>({})
+
+  // Fetch real user counts for all rooms
+  useEffect(() => {
+    if (rooms.length === 0) return
+
+    // Fetch user counts for all rooms
+    Promise.all(
+      rooms.map(async (room) => {
+        try {
+          const res = await fetch(`/api/rooms/${room.slug}/count`)
+          const data = await res.json()
+          return { slug: room.slug, count: data.count || 0 }
+        } catch (error) {
+          console.error(`Failed to fetch count for ${room.slug}:`, error)
+          return { slug: room.slug, count: 0 }
+        }
+      })
+    ).then((counts) => {
+      const countsMap: Record<string, number> = {}
+      counts.forEach(({ slug, count }) => {
+        countsMap[slug] = count
+      })
+      setUserCounts(countsMap)
+    })
+  }, [rooms])
+
   const getUserCount = (room: Room) => {
-    // In a real implementation, this would come from real-time presence data
-    return Math.floor(Math.random() * 50) + 1 // Placeholder
+    return userCounts[room.slug] || 0
   }
 
   const handleGoToRoom = () => {

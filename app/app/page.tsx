@@ -24,6 +24,7 @@ export default function AppPage() {
     setCurrentRoom,
     setMessages,
     addMessage,
+    setOnlineUsers,
   } = useChatStore()
   const { user, setMe, isLoading } = useMeStore()
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
@@ -194,6 +195,26 @@ export default function AppPage() {
       })
       .catch((error) => {
         console.error('❌ [MESSAGES] Failed to load messages:', error)
+      })
+
+    // Load online users for this room
+    console.log('👥 [USERS] Fetching online users for room:', currentRoomSlug)
+    fetch(`/api/rooms/${currentRoomSlug}/users`)
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Failed to fetch users: ${res.status}`)
+        }
+        return res.json()
+      })
+      .then((data) => {
+        console.log('✅ [USERS] Users received:', data.count, 'users')
+        if (Array.isArray(data.users)) {
+          setOnlineUsers(currentRoomSlug, data.users)
+        }
+      })
+      .catch((error) => {
+        console.error('❌ [USERS] Failed to load users:', error)
+        setOnlineUsers(currentRoomSlug, [])
       })
 
     // Subscribe to new messages via Supabase Realtime

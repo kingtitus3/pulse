@@ -25,25 +25,28 @@ export async function GET(req: NextRequest) {
 
     console.log('[ROOMS API] Fetching rooms with where:', JSON.stringify(where), 'orderBy:', JSON.stringify(orderBy))
     
-    let rooms
+    let rooms: any[] = []
     let usedFallback = false
     
+    // Try Prisma first, but always have Supabase as backup
     try {
-      // Try Prisma first
       rooms = await prisma.room.findMany({
         where,
         orderBy,
       })
-      console.log('[ROOMS API] Prisma found', rooms.length, 'rooms')
+      console.log('[ROOMS API] ✅ Prisma found', rooms.length, 'rooms')
     } catch (prismaError: any) {
-      console.warn('[ROOMS API] Prisma failed, trying Supabase API fallback')
+      console.warn('[ROOMS API] Prisma failed, using Supabase API')
       console.warn('[ROOMS API] Prisma error:', prismaError.message)
       console.warn('[ROOMS API] Prisma error code:', prismaError.code)
       
       usedFallback = true
-      
+    }
+    
+    // If Prisma failed or returned no rooms, use Supabase
+    if (usedFallback || rooms.length === 0) {
       try {
-        // Fallback to Supabase API
+        console.log('[ROOMS API] Fetching from Supabase...')
         const supabase = getSupabaseAdmin()
         let query = supabase.from('Room').select('*')
         
@@ -60,29 +63,31 @@ export async function GET(req: NextRequest) {
         const { data, error } = await query
         
         if (error) {
-          console.error('[ROOMS API] Supabase fallback error:', error)
+          console.error('[ROOMS API] Supabase error:', error)
           console.error('[ROOMS API] Supabase error code:', error.code)
           console.error('[ROOMS API] Supabase error message:', error.message)
           throw error
         }
         
-        rooms = data || []
-        console.log('[ROOMS API] ✅ Supabase fallback successful! Found', rooms.length, 'rooms')
-        if (rooms.length > 0) {
-          console.log('[ROOMS API] Fallback room slugs:', rooms.map((r: any) => r.slug))
+        if (data && data.length > 0) {
+          rooms = data
+          console.log('[ROOMS API] ✅ Supabase found', rooms.length, 'rooms')
+          console.log('[ROOMS API] Room slugs:', rooms.map((r: any) => r.slug))
+        } else {
+          console.warn('[ROOMS API] Supabase returned empty array')
         }
       } catch (supabaseError: any) {
-        console.error('[ROOMS API] Both Prisma and Supabase failed!')
-        console.error('[ROOMS API] Supabase error:', supabaseError.message || supabaseError)
-        throw supabaseError
+        console.error('[ROOMS API] Supabase fallback failed:', supabaseError.message || supabaseError)
+        // Don't throw - return empty array instead
+        rooms = []
       }
     }
     
     // Log which method was used
     if (usedFallback) {
-      console.log('[ROOMS API] ⚠️ Used Supabase fallback (Prisma connection issue)')
+      console.log('[ROOMS API] ⚠️ Used Supabase (Prisma unavailable)')
     } else {
-      console.log('[ROOMS API] ✅ Used Prisma (normal operation)')
+      console.log('[ROOMS API] ✅ Used Prisma')
     }
 
     console.log('[ROOMS API] Found', rooms.length, 'rooms total')

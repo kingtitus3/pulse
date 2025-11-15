@@ -441,6 +441,7 @@ export default function AppPage() {
           }
         }}
       />
-    </div>
+      </div>
+    </ErrorBoundary>
   )
 }

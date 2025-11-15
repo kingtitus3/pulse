@@ -247,7 +247,9 @@ export default function AppPage() {
     currentRoom: currentRoom?.shortName || 'none',
   })
 
-  return (
+  // Wrap in try-catch for error handling
+  try {
+    return (
     <div className="h-screen flex bg-gray-300 overflow-hidden">
       {/* Left Panel - Chat Tools */}
       <ChatTools onJoinRoom={() => setShowJoinDialog(true)} />
@@ -301,14 +303,16 @@ export default function AppPage() {
               </div>
             </div>
           ) : (
-            messages.map((msg, idx) => (
-              <ChatMessage
-                key={msg.id || `msg-${idx}`}
-                message={msg}
-                index={idx}
-                onUserClick={(userId) => setSelectedUserId(userId)}
-              />
-            ))
+            messages
+              .filter((msg) => msg && msg.user) // Filter out invalid messages
+              .map((msg, idx) => (
+                <ChatMessage
+                  key={msg.id || `msg-${idx}`}
+                  message={msg}
+                  index={idx}
+                  onUserClick={(userId) => setSelectedUserId(userId)}
+                />
+              ))
           )}
         </div>
 

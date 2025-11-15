@@ -18,7 +18,23 @@ export default function ChatMessage({
 }: ChatMessageProps) {
   const { user: me } = useMeStore()
   const [showProfile, setShowProfile] = useState(false)
-  const isSelf = me?.id === message.user.id
+  
+  // Safety checks
+  if (!message) {
+    console.error('ChatMessage: message is null/undefined')
+    return null
+  }
+  
+  if (!message.user) {
+    console.error('ChatMessage: message.user is null/undefined', message)
+    return (
+      <div className="px-2 py-1 text-sm text-red-500">
+        Error: Message missing user data
+      </div>
+    )
+  }
+  
+  const isSelf = me?.id === message.user?.id
   const isEven = index % 2 === 0
 
   const formatTime = (date: Date) => {

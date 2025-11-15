@@ -93,14 +93,24 @@ export async function GET(req: NextRequest) {
     console.log('[ROOMS API] Found', rooms.length, 'rooms total')
     if (rooms.length > 0) {
       console.log('[ROOMS API] Room slugs:', rooms.map((r: any) => r.slug))
+      console.log('[ROOMS API] First room sample:', JSON.stringify(rooms[0], null, 2))
     } else {
-      console.warn('[ROOMS API] No rooms found! This might indicate:')
+      console.warn('[ROOMS API] ⚠️ No rooms found! This might indicate:')
       console.warn('[ROOMS API] 1. Database not seeded')
       console.warn('[ROOMS API] 2. All rooms are archived')
       console.warn('[ROOMS API] 3. Database connection issue')
+      console.warn('[ROOMS API] 4. Supabase query returned empty')
     }
 
-    return NextResponse.json(rooms)
+    // Ensure we always return an array, even if empty
+    const response = Array.isArray(rooms) ? rooms : []
+    console.log('[ROOMS API] Returning', response.length, 'rooms to client')
+    return NextResponse.json(response, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      },
+    })
   } catch (error: any) {
     console.error('[ROOMS API] Error:', error.message)
     console.error('[ROOMS API] Error code:', error.code)

@@ -10,6 +10,7 @@ import MessageInput from '@/components/MessageInput'
 import ChattersList from '@/components/ChattersList'
 import ProfilePopup from '@/components/ProfilePopup'
 import JoinRoomDialog from '@/components/JoinRoomDialog'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { supabase } from '@/lib/supabaseClient'
 
 
@@ -279,7 +280,8 @@ export default function AppPage() {
   })
 
   return (
-    <div className="h-screen flex bg-gray-300 overflow-hidden">
+    <ErrorBoundary>
+      <div className="h-screen flex bg-gray-300 overflow-hidden">
       {/* Left Panel - Chat Tools */}
       <ChatTools onJoinRoom={() => setShowJoinDialog(true)} />
 

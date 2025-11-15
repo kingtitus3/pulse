@@ -142,11 +142,13 @@ export default function JoinRoomDialog({
     console.log('🚀 [DIALOG] selectedRoom:', selectedRoom)
     console.log('🚀 [DIALOG] roomNameInput:', roomNameInput)
     console.log('🚀 [DIALOG] rooms available:', rooms.length)
+    console.log('🚀 [DIALOG] filteredRooms:', filteredRooms.length)
+    
+    let roomToJoin: Room | null = null
     
     if (selectedRoom) {
-      console.log('✅ [DIALOG] Joining selected room:', selectedRoom.slug)
-      onJoinRoom(selectedRoom.slug)
-      onClose()
+      roomToJoin = selectedRoom
+      console.log('✅ [DIALOG] Using selected room:', selectedRoom.slug)
     } else if (roomNameInput.trim()) {
       // Try to find room by name
       const room = rooms.find(
@@ -155,14 +157,33 @@ export default function JoinRoomDialog({
           r.slug === roomNameInput.trim().toLowerCase()
       )
       if (room) {
+        roomToJoin = room
         console.log('✅ [DIALOG] Found room by name:', room.slug)
-        onJoinRoom(room.slug)
-        onClose()
       } else {
         console.warn('⚠️ [DIALOG] Room not found by name:', roomNameInput)
+        alert(`Room "${roomNameInput}" not found. Please select a room from the list.`)
+        return
       }
+    } else if (filteredRooms.length > 0) {
+      // Auto-select first room if none selected
+      roomToJoin = filteredRooms[0]
+      console.log('✅ [DIALOG] Auto-selecting first room:', roomToJoin.slug)
     } else {
-      console.warn('⚠️ [DIALOG] No room selected and no room name entered')
+      console.error('❌ [DIALOG] No room available to join!')
+      alert('No rooms available. Please try again.')
+      return
+    }
+    
+    if (roomToJoin) {
+      console.log('🎯 [DIALOG] Calling onJoinRoom with:', roomToJoin.slug)
+      try {
+        onJoinRoom(roomToJoin.slug)
+        console.log('✅ [DIALOG] onJoinRoom called successfully')
+        onClose()
+      } catch (error) {
+        console.error('❌ [DIALOG] Error calling onJoinRoom:', error)
+        alert('Error joining room. Please try again.')
+      }
     }
   }
 
@@ -347,14 +368,16 @@ export default function JoinRoomDialog({
               </a>
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    console.log('🔘 [DIALOG] Go to Room clicked, selectedRoom:', selectedRoom)
+                    console.log('🔘 [DIALOG] Go to Room button clicked!')
+                    console.log('🔘 [DIALOG] selectedRoom:', selectedRoom)
+                    console.log('🔘 [DIALOG] filteredRooms:', filteredRooms.length)
                     handleGoToRoom()
                   }}
-                  disabled={!selectedRoom && !roomNameInput.trim()}
-                  className="btn-yahoo text-xs px-4 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="btn-yahoo text-xs px-4 py-1"
                 >
                   Go to Room
                 </button>

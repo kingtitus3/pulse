@@ -297,46 +297,76 @@ export default function AppPage() {
         isOpen={showJoinDialog}
         onClose={() => setShowJoinDialog(false)}
         onJoinRoom={(slug) => {
-          console.log('🎯 [JOIN] Joining room:', slug)
+          console.log('🎯 [JOIN] ====== JOIN ROOM CALLED ======')
+          console.log('🎯 [JOIN] Slug:', slug)
           console.log('🎯 [JOIN] Current room before:', currentRoomSlug)
           
-          // Set the room in the store first
-          setCurrentRoom(slug)
-          console.log('🎯 [JOIN] Room set in store')
+          if (!slug) {
+            console.error('❌ [JOIN] No slug provided!')
+            return
+          }
           
-          // Update URL
-          window.history.pushState({}, '', `/app?room=${slug}`)
-          console.log('🎯 [JOIN] URL updated')
-          
-          // Close dialog
-          setShowJoinDialog(false)
-          
-          // Force reload room data
-          setCurrentRoomData(null)
-          
-          // Manually trigger room load
-          fetch(`/api/rooms/${slug}`)
-            .then((res) => res.json())
-            .then((data) => {
-              console.log('✅ [JOIN] Room data loaded:', data)
-              setCurrentRoomData(data)
-            })
-            .catch((error) => {
-              console.error('❌ [JOIN] Failed to load room:', error)
-            })
-          
-          // Load messages
-          fetch(`/api/rooms/${slug}/messages?limit=50`)
-            .then((res) => res.json())
-            .then((data) => {
-              console.log('✅ [JOIN] Messages loaded:', data.length)
-              if (Array.isArray(data)) {
-                setMessages(slug, data)
-              }
-            })
-            .catch((error) => {
-              console.error('❌ [JOIN] Failed to load messages:', error)
-            })
+          try {
+            // Set the room in the store first
+            console.log('🎯 [JOIN] Calling setCurrentRoom...')
+            setCurrentRoom(slug)
+            console.log('🎯 [JOIN] setCurrentRoom called')
+            
+            // Update URL
+            const newUrl = `/app?room=${slug}`
+            console.log('🎯 [JOIN] Updating URL to:', newUrl)
+            window.history.pushState({}, '', newUrl)
+            console.log('🎯 [JOIN] URL updated')
+            
+            // Close dialog
+            setShowJoinDialog(false)
+            console.log('🎯 [JOIN] Dialog closed')
+            
+            // Force reload room data
+            setCurrentRoomData(null)
+            
+            // Manually trigger room load
+            console.log('🎯 [JOIN] Fetching room data...')
+            fetch(`/api/rooms/${slug}`)
+              .then((res) => {
+                console.log('📡 [JOIN] Room fetch status:', res.status)
+                if (!res.ok) {
+                  throw new Error(`Failed to fetch room: ${res.status}`)
+                }
+                return res.json()
+              })
+              .then((data) => {
+                console.log('✅ [JOIN] Room data loaded:', data)
+                setCurrentRoomData(data)
+              })
+              .catch((error) => {
+                console.error('❌ [JOIN] Failed to load room:', error)
+              })
+            
+            // Load messages
+            console.log('🎯 [JOIN] Fetching messages...')
+            fetch(`/api/rooms/${slug}/messages?limit=50`)
+              .then((res) => {
+                console.log('📡 [JOIN] Messages fetch status:', res.status)
+                if (!res.ok) {
+                  throw new Error(`Failed to fetch messages: ${res.status}`)
+                }
+                return res.json()
+              })
+              .then((data) => {
+                console.log('✅ [JOIN] Messages loaded:', Array.isArray(data) ? data.length : 'not an array')
+                if (Array.isArray(data)) {
+                  setMessages(slug, data)
+                }
+              })
+              .catch((error) => {
+                console.error('❌ [JOIN] Failed to load messages:', error)
+              })
+            
+            console.log('✅ [JOIN] ====== JOIN ROOM COMPLETE ======')
+          } catch (error) {
+            console.error('❌ [JOIN] Error in onJoinRoom:', error)
+          }
         }}
       />
     </div>

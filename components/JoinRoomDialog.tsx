@@ -195,8 +195,8 @@ export default function JoinRoomDialog({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white border-2 border-gray-400 shadow-2xl w-[800px] h-[600px] flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white border-2 border-gray-400 shadow-2xl w-full max-w-[800px] h-[90vh] sm:h-[600px] max-h-[800px] flex flex-col">
         {/* XP-style Title Bar */}
         <div
           className="yahoo-header flex justify-between items-center flex-shrink-0"
@@ -216,9 +216,9 @@ export default function JoinRoomDialog({
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left Panel - Info */}
-          <div className="w-64 bg-gray-50 border-r-2 border-gray-300 p-3 flex flex-col text-xs overflow-y-auto">
+        <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
+          {/* Left Panel - Info - Hidden on mobile, shown on desktop */}
+          <div className="hidden sm:flex w-64 bg-gray-50 border-r-2 border-gray-300 p-3 flex-col text-xs overflow-y-auto">
             <div className="mb-4">
               <div className="text-lg font-bold mb-1">
                 <span className="text-purple-600">Pulse</span>
@@ -258,9 +258,9 @@ export default function JoinRoomDialog({
           </div>
 
           {/* Right Panel - Room Selection */}
-          <div className="flex-1 flex flex-col p-3">
+          <div className="flex-1 flex flex-col p-2 sm:p-3">
             {/* Top: Enter Chat room as */}
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-2 sm:mb-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <label className="text-xs text-gray-700 whitespace-nowrap">
                 Enter Chat room as:
               </label>
@@ -268,19 +268,19 @@ export default function JoinRoomDialog({
                 type="text"
                 value={roomNameInput || user?.displayName || ''}
                 onChange={(e) => setRoomNameInput(e.target.value)}
-                className="input-yahoo flex-1 text-xs"
+                className="input-yahoo flex-1 text-xs min-h-[44px] sm:min-h-0"
                 placeholder="Your display name"
               />
             </div>
 
             {/* Middle: Categories and Rooms */}
-            <div className="flex-1 flex gap-2 mb-3">
+            <div className="flex-1 flex flex-col sm:flex-row gap-2 mb-2 sm:mb-3 min-h-0">
               {/* Left: Categories */}
-              <div className="w-48 border-2 border-gray-400 bg-white">
+              <div className="w-full sm:w-48 border-2 border-gray-400 bg-white flex-shrink-0 sm:flex-shrink">
                 <div className="bg-gray-200 border-b border-gray-400 px-2 py-1 text-xs font-bold">
                   Categories
                 </div>
-                <div className="overflow-y-auto" style={{ height: '400px' }}>
+                <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 300px)', height: '300px' }}>
                   {CATEGORIES.map((cat) => (
                     <div
                       key={cat.id}
@@ -300,11 +300,11 @@ export default function JoinRoomDialog({
               </div>
 
               {/* Right: Rooms */}
-              <div className="flex-1 border-2 border-gray-400 bg-white">
+              <div className="flex-1 border-2 border-gray-400 bg-white min-w-0">
                 <div className="bg-gray-200 border-b border-gray-400 px-2 py-1 text-xs font-bold">
                   Pulse Rooms
                 </div>
-                <div className="overflow-y-auto" style={{ height: '400px' }}>
+                <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 300px)', height: '300px' }}>
                   {loadingRooms ? (
                     <div className="px-2 py-4 text-xs text-gray-500 text-center">
                       Loading rooms...
@@ -342,10 +342,10 @@ export default function JoinRoomDialog({
                             console.log('🖱️🖱️ [DIALOG] Room double-clicked:', room.slug)
                             handleDoubleClickRoom(room)
                           }}
-                          className={`px-2 py-1 text-xs cursor-pointer ${
+                          className={`px-2 py-2 sm:py-1 text-xs cursor-pointer touch-manipulation min-h-[44px] sm:min-h-0 flex items-center ${
                             isSelected
                               ? 'bg-blue-200'
-                              : 'hover:bg-gray-100'
+                              : 'hover:bg-gray-100 active:bg-gray-200'
                           }`}
                         >
                           {room.shortName}({userCount})
@@ -358,10 +358,10 @@ export default function JoinRoomDialog({
             </div>
 
             {/* Bottom: Buttons */}
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 sm:gap-0 mt-2">
               <a
                 href="#"
-                className="text-blue-600 hover:underline text-xs"
+                className="text-blue-600 hover:underline text-xs touch-manipulation text-center sm:text-left"
                 onClick={(e) => e.preventDefault()}
               >
                 chat rules
@@ -377,13 +377,13 @@ export default function JoinRoomDialog({
                     console.log('🔘 [DIALOG] filteredRooms:', filteredRooms.length)
                     handleGoToRoom()
                   }}
-                  className="btn-yahoo text-xs px-4 py-1"
+                  className="btn-yahoo text-xs px-4 py-3 sm:py-1 touch-manipulation min-h-[44px] sm:min-h-0 flex-1 sm:flex-none"
                 >
                   Go to Room
                 </button>
                 <button
                   onClick={onClose}
-                  className="btn-yahoo-secondary text-xs px-4 py-1"
+                  className="btn-yahoo-secondary text-xs px-4 py-3 sm:py-1 touch-manipulation min-h-[44px] sm:min-h-0 flex-1 sm:flex-none"
                 >
                   Cancel
                 </button>

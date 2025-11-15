@@ -244,7 +244,7 @@ export default function AppPage() {
     currentRoomSlug,
     messagesCount: messages.length,
     messagesByRoomKeys: Object.keys(messagesByRoom),
-    currentRoomData: currentRoomData?.shortName || 'none',
+    currentRoom: currentRoom?.shortName || 'none',
   })
 
   return (

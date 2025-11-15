@@ -436,7 +436,7 @@ export default function JoinRoomDialog({
                               : 'hover:bg-gray-100 active:bg-gray-200'
                           }`}
                         >
-                          {room.shortName}({userCount})
+                          {room.shortName}{userCount > 0 && `(${userCount})`}
                         </div>
                       )
                     })

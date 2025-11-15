@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { logger } from '@/lib/logger'
-
-const prisma = new PrismaClient()
+import { getSupabaseAdmin } from '@/lib/supabaseClient'
 
 export async function GET(
   req: NextRequest,
@@ -11,16 +9,22 @@ export async function GET(
   try {
     const slug = params.slug
 
-    const room = await prisma.room.findUnique({
-      where: { slug },
-    })
+    // Use Supabase directly (more reliable in serverless)
+    const supabase = getSupabaseAdmin()
+    const { data: room, error } = await supabase
+      .from('Room')
+      .select('*')
+      .eq('slug', slug)
+      .single()
 
-    if (!room) {
+    if (error || !room) {
+      console.error('[ROOM API] Room not found:', slug, error)
       return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
     return NextResponse.json(room)
-  } catch (error) {
+  } catch (error: any) {
+    console.error('[ROOM API] Error:', error.message)
     logger.error('Failed to get room', { error })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

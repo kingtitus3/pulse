@@ -314,26 +314,44 @@ export default function JoinRoomDialog({
                   Categories
                 </div>
                 <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 300px)', height: '300px' }}>
-                  {CATEGORIES.map((cat) => (
-                    <div
-                      key={cat.id}
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        console.log('📁 [DIALOG] Category clicked:', cat.id)
-                        setSelectedCategory(cat.id)
-                      }}
-                      className={`px-2 py-1 text-xs cursor-pointer flex items-center gap-1 touch-manipulation ${
-                        selectedCategory === cat.id
-                          ? 'bg-yellow-200 border-l-2 border-yellow-600'
-                          : 'hover:bg-gray-100'
-                      }`}
-                    >
-                      <span className="text-yellow-500">📁</span>
-                      <span className="text-gray-500">+</span>
-                      <span>{cat.name}</span>
-                    </div>
-                  ))}
+                  {CATEGORIES.map((cat) => {
+                    // Count rooms in this category for display
+                    let count = 0
+                    if (cat.id === 'core') {
+                      count = rooms.filter((r) => r.type === 'core').length
+                    } else if (cat.id === 'topics') {
+                      count = rooms.filter((r) => r.type === 'topic' && !r.archived).length
+                    } else if (cat.id === 'featured') {
+                      count = rooms.filter((r) => !r.archived).length
+                    }
+                    
+                    return (
+                      <div
+                        key={cat.id}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          console.log('📁 [DIALOG] Category clicked:', cat.id, 'rooms available:', rooms.length)
+                          setSelectedCategory(cat.id)
+                        }}
+                        className={`px-2 py-1.5 text-xs cursor-pointer flex items-center justify-between touch-manipulation min-h-[44px] sm:min-h-0 ${
+                          selectedCategory === cat.id
+                            ? 'bg-yellow-200 border-l-2 border-yellow-600 font-bold'
+                            : 'hover:bg-gray-100'
+                        }`}
+                        style={{ userSelect: 'none' }}
+                      >
+                        <div className="flex items-center gap-1">
+                          <span className="text-yellow-500">📁</span>
+                          <span className="text-gray-500">+</span>
+                          <span>{cat.name}</span>
+                        </div>
+                        {count > 0 && (
+                          <span className="text-gray-500 text-[10px]">({count})</span>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 

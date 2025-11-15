@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { logger } from '@/lib/logger'
+import { getSupabaseAdmin } from '@/lib/supabaseClient'
 
 const prisma = new PrismaClient()
 
@@ -13,41 +14,122 @@ export async function GET(
     const { searchParams } = new URL(req.url)
     const limit = parseInt(searchParams.get('limit') || '50', 10)
 
-    // Get room
-    const room = await prisma.room.findUnique({
-      where: { slug },
-    })
+    console.log('[MESSAGES API] Fetching messages for room:', slug)
 
-    if (!room) {
-      return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+    let room: any = null
+    let messages: any[] = []
+
+    // Try Prisma first
+    try {
+      room = await prisma.room.findUnique({
+        where: { slug },
+      })
+      console.log('[MESSAGES API] Prisma found room:', room?.id)
+    } catch (prismaError: any) {
+      console.warn('[MESSAGES API] Prisma failed, using Supabase:', prismaError.message)
     }
 
-    // Get messages
-    const messages = await prisma.message.findMany({
-      where: {
-        roomId: room.id,
-        deletedAt: null,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            displayName: true,
-            avatar: true,
+    // If Prisma failed or room not found, try Supabase
+    if (!room) {
+      try {
+        const supabase = getSupabaseAdmin()
+        const { data: roomData, error: roomError } = await supabase
+          .from('Room')
+          .select('*')
+          .eq('slug', slug)
+          .single()
+
+        if (roomError || !roomData) {
+          return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+        }
+        room = roomData
+        console.log('[MESSAGES API] Supabase found room:', room.id)
+      } catch (supabaseError: any) {
+        console.error('[MESSAGES API] Supabase room lookup failed:', supabaseError.message)
+        return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+      }
+    }
+
+    // Get messages - try Prisma first
+    try {
+      messages = await prisma.message.findMany({
+        where: {
+          roomId: room.id,
+          deletedAt: null,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              displayName: true,
+              avatar: true,
+            },
           },
         },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: limit,
-    })
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: limit,
+      })
+      console.log('[MESSAGES API] Prisma found', messages.length, 'messages')
+    } catch (prismaError: any) {
+      console.warn('[MESSAGES API] Prisma messages failed, using Supabase:', prismaError.message)
+      
+      // Fallback to Supabase
+      try {
+        const supabase = getSupabaseAdmin()
+        const { data: messagesData, error: messagesError } = await supabase
+          .from('Message')
+          .select(`
+            *,
+            user:User!Message_userId_fkey (
+              id,
+              displayName,
+              avatar
+            )
+          `)
+          .eq('roomId', room.id)
+          .is('deletedAt', null)
+          .order('createdAt', { ascending: false })
+          .limit(limit)
+
+        if (messagesError) {
+          throw messagesError
+        }
+
+        // Transform Supabase response to match Prisma format
+        messages = (messagesData || []).map((msg: any) => ({
+          id: msg.id,
+          roomId: msg.roomId,
+          userId: msg.userId,
+          type: msg.type,
+          content: msg.content,
+          mediaUrl: msg.mediaUrl,
+          width: msg.width,
+          height: msg.height,
+          createdAt: msg.createdAt,
+          updatedAt: msg.updatedAt,
+          deletedAt: msg.deletedAt,
+          user: msg.user || {
+            id: msg.userId,
+            displayName: 'Unknown',
+            avatar: null,
+          },
+        }))
+        console.log('[MESSAGES API] Supabase found', messages.length, 'messages')
+      } catch (supabaseError: any) {
+        console.error('[MESSAGES API] Supabase messages failed:', supabaseError.message)
+        messages = []
+      }
+    }
 
     // Reverse to show oldest first
     messages.reverse()
 
+    console.log('[MESSAGES API] Returning', messages.length, 'messages')
     return NextResponse.json(messages)
-  } catch (error) {
+  } catch (error: any) {
+    console.error('[MESSAGES API] Error:', error.message)
     logger.error('Failed to get messages', { error })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

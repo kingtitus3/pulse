@@ -29,18 +29,22 @@ export async function middleware(request: NextRequest) {
     ].join('; ')
     response.headers.set('Content-Security-Policy', csp)
   } else {
-    // Production CSP (stricter)
+    // Production CSP - allow eval for Next.js to work properly
     const csp = [
       "default-src 'self'",
       // Allow Next.js inline scripts and eval in production so the app can run,
       // while still restricting external origins.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.vercel-insights.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https: blob:",
       "connect-src 'self' https://*.supabase.co https://api.tenor.com https://media.tenor.com wss://*.supabase.co",
       "media-src 'self' https: blob:",
+      "font-src 'self' data: blob: https:",
+      "worker-src 'self' blob:",
+      "frame-src 'self'",
       "frame-ancestors 'none'",
-      "font-src 'self' data:",
+      "object-src 'none'",
+      "base-uri 'self'",
     ].join('; ')
     response.headers.set('Content-Security-Policy', csp)
   }

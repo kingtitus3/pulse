@@ -30,32 +30,23 @@ export default function JoinRoomDialog({
   const [filteredRooms, setFilteredRooms] = useState<Room[]>([])
   const [loadingRooms, setLoadingRooms] = useState(false)
 
-  // Load rooms when dialog opens
+  // Load rooms when dialog opens - ALWAYS fetch fresh data
   useEffect(() => {
     if (!isOpen) return
     
-    console.log('📂 [DIALOG] Dialog opened, rooms in store:', rooms.length)
+    console.log('📂 [DIALOG] Dialog opened')
+    console.log('📂 [DIALOG] Rooms in store:', rooms.length)
     
-    // If we already have rooms, use them
-    if (rooms.length > 0) {
-      console.log('✅ [DIALOG] Using existing rooms from store')
-      // Auto-select first category that has rooms
-      const coreRooms = rooms.filter((r: Room) => r.type === 'core')
-      const topicRooms = rooms.filter((r: Room) => r.type === 'topic' && !r.archived)
-      if (coreRooms.length > 0) {
-        setSelectedCategory('core')
-      } else if (topicRooms.length > 0) {
-        setSelectedCategory('topics')
-      } else if (rooms.length > 0) {
-        setSelectedCategory('featured')
-      }
-      return
-    }
-    
-    // Otherwise, fetch rooms
+    // Always fetch fresh data when dialog opens
     console.log('🔄 [DIALOG] Fetching rooms from API...')
     setLoadingRooms(true)
-    fetch('/api/rooms?sort=activity')
+    
+    fetch('/api/rooms?sort=activity', {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    })
       .then((res) => {
         console.log('📡 [DIALOG] Rooms API response:', res.status, res.ok)
         if (!res.ok) {
@@ -67,26 +58,34 @@ export default function JoinRoomDialog({
         console.log('📦 [DIALOG] Rooms data received:', {
           isArray: Array.isArray(data),
           length: Array.isArray(data) ? data.length : 'not an array',
-          data: data
+          sample: Array.isArray(data) && data.length > 0 ? data[0] : null,
         })
         
         if (Array.isArray(data) && data.length > 0) {
           console.log('✅ [DIALOG] Setting', data.length, 'rooms to store')
           console.log('📋 [DIALOG] Room types:', data.map((r: any) => ({ slug: r.slug, type: r.type, archived: r.archived })))
+          
+          // Update store
           setRooms(data)
+          
           // Auto-select first category that has rooms
           const coreRooms = data.filter((r: Room) => r.type === 'core')
           const topicRooms = data.filter((r: Room) => r.type === 'topic' && !r.archived)
           console.log('📊 [DIALOG] Core rooms:', coreRooms.length, 'Topic rooms:', topicRooms.length)
+          
           if (coreRooms.length > 0) {
+            console.log('🎯 [DIALOG] Setting category to core')
             setSelectedCategory('core')
           } else if (topicRooms.length > 0) {
+            console.log('🎯 [DIALOG] Setting category to topics')
             setSelectedCategory('topics')
           } else if (data.length > 0) {
+            console.log('🎯 [DIALOG] Setting category to featured')
             setSelectedCategory('featured')
           }
         } else {
-          console.warn('⚠️ [DIALOG] No rooms in response - data:', data)
+          console.warn('⚠️ [DIALOG] No rooms in response')
+          console.warn('⚠️ [DIALOG] Data:', data)
         }
         setLoadingRooms(false)
       })
@@ -94,7 +93,7 @@ export default function JoinRoomDialog({
         console.error('❌ [DIALOG] Failed to load rooms:', error)
         setLoadingRooms(false)
       })
-  }, [isOpen, rooms, setRooms])
+  }, [isOpen, setRooms]) // Removed 'rooms' from deps to always fetch fresh
 
   // Filter rooms by category
   useEffect(() => {

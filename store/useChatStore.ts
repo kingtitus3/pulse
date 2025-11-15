@@ -66,7 +66,11 @@ export const useChatStore = create<ChatState>((set) => ({
     console.log('🏪 [STORE] Rooms state updated')
   },
 
-  setCurrentRoom: (slug) => set({ currentRoomSlug: slug }),
+  setCurrentRoom: (slug) => {
+    console.log('🏪 [STORE] setCurrentRoom called with slug:', slug)
+    set({ currentRoomSlug: slug })
+    console.log('🏪 [STORE] currentRoomSlug updated to:', slug)
+  },
 
   setMessages: (slug, messages) =>
     set((state) => ({

@@ -32,32 +32,61 @@ export default function JoinRoomDialog({
 
   // Load rooms when dialog opens
   useEffect(() => {
-    if (isOpen && rooms.length === 0) {
-      setLoadingRooms(true)
-      fetch('/api/rooms?sort=activity')
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data) && data.length > 0) {
-            setRooms(data)
-            // Auto-select first category that has rooms
-            const coreRooms = data.filter((r: Room) => r.type === 'core')
-            const topicRooms = data.filter((r: Room) => r.type === 'topic' && !r.archived)
-            if (coreRooms.length > 0) {
-              setSelectedCategory('core')
-            } else if (topicRooms.length > 0) {
-              setSelectedCategory('topics')
-            } else if (data.length > 0) {
-              setSelectedCategory('featured')
-            }
-          }
-          setLoadingRooms(false)
-        })
-        .catch((error) => {
-          console.error('Failed to load rooms:', error)
-          setLoadingRooms(false)
-        })
+    if (!isOpen) return
+    
+    console.log('📂 [DIALOG] Dialog opened, rooms in store:', rooms.length)
+    
+    // If we already have rooms, use them
+    if (rooms.length > 0) {
+      console.log('✅ [DIALOG] Using existing rooms from store')
+      // Auto-select first category that has rooms
+      const coreRooms = rooms.filter((r: Room) => r.type === 'core')
+      const topicRooms = rooms.filter((r: Room) => r.type === 'topic' && !r.archived)
+      if (coreRooms.length > 0) {
+        setSelectedCategory('core')
+      } else if (topicRooms.length > 0) {
+        setSelectedCategory('topics')
+      } else if (rooms.length > 0) {
+        setSelectedCategory('featured')
+      }
+      return
     }
-  }, [isOpen, rooms.length, setRooms])
+    
+    // Otherwise, fetch rooms
+    console.log('🔄 [DIALOG] Fetching rooms from API...')
+    setLoadingRooms(true)
+    fetch('/api/rooms?sort=activity')
+      .then((res) => {
+        console.log('📡 [DIALOG] Rooms API response:', res.status)
+        if (!res.ok) {
+          throw new Error(`Failed to fetch rooms: ${res.status}`)
+        }
+        return res.json()
+      })
+      .then((data) => {
+        console.log('📦 [DIALOG] Rooms data received:', Array.isArray(data) ? data.length : 'not an array')
+        if (Array.isArray(data) && data.length > 0) {
+          setRooms(data)
+          // Auto-select first category that has rooms
+          const coreRooms = data.filter((r: Room) => r.type === 'core')
+          const topicRooms = data.filter((r: Room) => r.type === 'topic' && !r.archived)
+          if (coreRooms.length > 0) {
+            setSelectedCategory('core')
+          } else if (topicRooms.length > 0) {
+            setSelectedCategory('topics')
+          } else if (data.length > 0) {
+            setSelectedCategory('featured')
+          }
+        } else {
+          console.warn('⚠️ [DIALOG] No rooms in response')
+        }
+        setLoadingRooms(false)
+      })
+      .catch((error) => {
+        console.error('❌ [DIALOG] Failed to load rooms:', error)
+        setLoadingRooms(false)
+      })
+  }, [isOpen, rooms, setRooms])
 
   // Filter rooms by category
   useEffect(() => {
@@ -280,8 +309,18 @@ export default function JoinRoomDialog({
                       return (
                         <div
                           key={room.id}
-                          onClick={() => setSelectedRoom(room)}
-                          onDoubleClick={() => handleDoubleClickRoom(room)}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            console.log('🖱️ [DIALOG] Room clicked:', room.slug, room.shortName)
+                            setSelectedRoom(room)
+                          }}
+                          onDoubleClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            console.log('🖱️🖱️ [DIALOG] Room double-clicked:', room.slug)
+                            handleDoubleClickRoom(room)
+                          }}
                           className={`px-2 py-1 text-xs cursor-pointer ${
                             isSelected
                               ? 'bg-blue-200'

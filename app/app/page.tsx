@@ -37,7 +37,7 @@ export default function AppPage() {
       .then(() => fetch('/api/me'))
       .then((res) => {
         if (!res.ok && res.status === 503) {
-          setDbError('Database not configured. Please set up your database connection in .env')
+          setDbError('Database not configured. Please check your Vercel environment variables.')
           return { error: 'Database not configured' }
         }
         return res.json()

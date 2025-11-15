@@ -24,8 +24,6 @@ export async function GET(req: NextRequest) {
     }
 
     console.log('[ROOMS API] Fetching rooms with where:', JSON.stringify(where), 'orderBy:', JSON.stringify(orderBy))
-    console.log('[ROOMS API] DATABASE_URL exists:', !!process.env.DATABASE_URL)
-    console.log('[ROOMS API] DATABASE_URL starts with:', process.env.DATABASE_URL?.substring(0, 30))
     
     let rooms
     let usedFallback = false

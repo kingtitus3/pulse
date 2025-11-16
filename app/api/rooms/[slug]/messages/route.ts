@@ -54,11 +54,20 @@ export async function GET(
 
     // Get messages - try Prisma first
     try {
+      const whereClause: any = {
+        roomId: room.id,
+        deletedAt: null,
+      }
+      
+      // Pagination support - use cursor-based pagination with ID
+      if (before) {
+        whereClause.id = { lt: before }
+      } else if (after) {
+        whereClause.id = { gt: after }
+      }
+
       messages = await prisma.message.findMany({
-        where: {
-          roomId: room.id,
-          deletedAt: null,
-        },
+        where: whereClause,
         include: {
           user: {
             select: {
@@ -68,11 +77,19 @@ export async function GET(
             },
           },
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: before
+          ? { createdAt: 'desc' } // For loading older messages
+          : after
+          ? { createdAt: 'asc' } // For fetching specific message
+          : { createdAt: 'desc' }, // Default: newest first
         take: limit,
       })
+      
+      // If loading older messages, reverse to maintain chronological order
+      if (before) {
+        messages.reverse()
+      }
+      
       console.log('[MESSAGES API] Prisma found', messages.length, 'messages')
     } catch (prismaError: any) {
       console.warn('[MESSAGES API] Prisma messages failed, using Supabase:', prismaError.message)

@@ -93,6 +93,18 @@ export default function AppPage() {
     loadRooms()
   }, [searchParams, router])
 
+  // Load user session
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        await fetch('/api/session/ensure')
+      } catch (err) {
+        console.error('Failed to ensure session:', err)
+      }
+    }
+    loadUser()
+  }, [])
+
   // Load messages when room changes
   useEffect(() => {
     if (!currentRoom) return
@@ -116,6 +128,20 @@ export default function AppPage() {
     }
 
     loadMessages()
+
+    // Listen for new messages
+    const handleMessageSent = () => {
+      setTimeout(loadMessages, 500) // Reload after a short delay
+    }
+    window.addEventListener('message-sent', handleMessageSent)
+
+    // Poll for new messages every 3 seconds
+    const interval = setInterval(loadMessages, 3000)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('message-sent', handleMessageSent)
+    }
   }, [currentRoom])
 
   const handleJoinRoom = (slug: string) => {

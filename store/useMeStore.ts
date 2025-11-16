@@ -21,12 +21,16 @@ export interface User {
   isAnonymous: boolean
 }
 
+type SetMePayload =
+  | { user: User; wallets?: Wallet[] }
+  | User
+
 interface MeState {
   user: User | null
   wallets: Wallet[]
   isLoading: boolean
 
-  setMe: (data: { user: User; wallets: Wallet[] }) => void
+  setMe: (data: SetMePayload) => void
   updateUser: (updates: Partial<User>) => void
   addWallet: (wallet: Wallet) => void
   removeWallet: (walletId: string) => void
@@ -39,7 +43,23 @@ export const useMeStore = create<MeState>((set) => ({
   wallets: [],
   isLoading: false,
 
-  setMe: (data) => set({ user: data.user, wallets: data.wallets }),
+  setMe: (data) =>
+    set(() => {
+      // Support both { user, wallets? } and plain User payloads
+      if ((data as any).user) {
+        const payload = data as { user: User; wallets?: Wallet[] }
+        return {
+          user: payload.user,
+          wallets: payload.wallets ?? [],
+        }
+      }
+
+      // Plain User
+      return {
+        user: data as User,
+        wallets: [],
+      }
+    }),
 
   updateUser: (updates) =>
     set((state) => ({

@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 import { createId } from '@paralleldrive/cuid2'
 import { getSupabaseAdmin } from './supabaseClient'
-import { prisma } from './prisma'
 
 export interface SessionData {
   session: {
@@ -35,46 +34,7 @@ export async function getSessionFromRequest(
     return null
   }
 
-  // Try Prisma first
-  try {
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
-      include: { user: true },
-    })
-
-    if (session) {
-      // Update lastSeenAt
-      await prisma.session.update({
-        where: { id: sessionId },
-        data: { lastSeenAt: new Date() },
-      })
-
-      return {
-        session: {
-          id: session.id,
-          userId: session.userId,
-          ipHash: session.ipHash,
-          createdAt: session.createdAt,
-          lastSeenAt: session.lastSeenAt,
-        },
-        user: {
-          id: session.user.id,
-          displayName: session.user.displayName,
-          avatar: session.user.avatar,
-          isAnonymous: session.user.isAnonymous,
-          role: session.user.role,
-          bio: session.user.bio,
-          tags: session.user.tags,
-          showWallets: session.user.showWallets,
-          createdAt: session.user.createdAt,
-        },
-      }
-    }
-  } catch (prismaError: any) {
-    console.warn('[SESSION] Prisma failed, trying Supabase:', prismaError.message)
-  }
-
-  // Fallback to Supabase
+  // Use Supabase as the single source of truth for sessions/users
   try {
     const supabase = getSupabaseAdmin()
     const { data: sessionData, error: sessionError } = await supabase

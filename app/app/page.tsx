@@ -59,10 +59,18 @@ export default function AppPage() {
     isMountedRef.current = true
     
     // Initialize Pusher client
-    if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_PUSHER_KEY) {
-      pusherClientRef.current = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY, {
-        cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER || 'us2',
-      })
+    if (typeof window !== 'undefined') {
+      const pusherKey = process.env.NEXT_PUBLIC_PUSHER_KEY
+      const pusherCluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER || 'us3'
+      
+      if (pusherKey) {
+        console.log('[PUSHER] Initializing client with key:', pusherKey.substring(0, 10) + '...', 'cluster:', pusherCluster)
+        pusherClientRef.current = new Pusher(pusherKey, {
+          cluster: pusherCluster,
+        })
+      } else {
+        console.warn('[PUSHER] NEXT_PUBLIC_PUSHER_KEY not found - Pusher will not work')
+      }
     }
     
     return () => {

@@ -228,24 +228,35 @@ export default function AppPage() {
         channel.bind('new-message', (data: Message) => {
           if (cancelled || !isMountedRef.current) return
 
+          console.log('[PUSHER] Received message event:', {
+            id: data.id,
+            roomId: data.roomId,
+            userId: data.userId,
+            hasUser: !!data.user,
+            userDisplayName: data.user?.displayName,
+          })
+
           // Prevent duplicates
           if (messageIdsRef.current.has(data.id)) {
             console.log('[PUSHER] Duplicate message ignored:', data.id)
             return
           }
 
-          console.log('[PUSHER] New message received:', data.id)
+          console.log('[PUSHER] Adding new message to state:', data.id)
           messageIdsRef.current.add(data.id)
 
           if (!cancelled && isMountedRef.current) {
             setMessages((prev) => {
               // Final duplicate check
               if (prev.some((m) => m.id === data.id)) {
+                console.log('[PUSHER] Message already in state, skipping:', data.id)
                 return prev
               }
-              return [...prev, data].sort((a, b) => 
+              const updated = [...prev, data].sort((a, b) => 
                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
               )
+              console.log('[PUSHER] Updated messages count:', prev.length, '->', updated.length)
+              return updated
             })
 
             // Auto-scroll to new message

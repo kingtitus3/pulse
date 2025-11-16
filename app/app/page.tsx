@@ -9,6 +9,7 @@ import ChattersList from '@/components/ChattersList'
 import ProfilePopup from '@/components/ProfilePopup'
 import JoinRoomDialog from '@/components/JoinRoomDialog'
 import ErrorBoundary from '@/components/ErrorBoundary'
+import { supabase } from '@/lib/supabaseClient'
 
 interface Room {
   id: string
@@ -48,7 +49,7 @@ export default function AppPage() {
   
   // Refs for stability
   const roomsLoadedRef = useRef(false)
-  const sseEventSourceRef = useRef<EventSource | null>(null)
+  const realtimeChannelRef = useRef<any>(null)
   const isMountedRef = useRef(true)
   const messageIdsRef = useRef<Set<string>>(new Set())
 
@@ -57,9 +58,9 @@ export default function AppPage() {
     isMountedRef.current = true
     return () => {
       isMountedRef.current = false
-      if (sseEventSourceRef.current) {
-        sseEventSourceRef.current.close()
-        sseEventSourceRef.current = null
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current)
+        realtimeChannelRef.current = null
       }
     }
   }, [])
@@ -139,18 +140,18 @@ export default function AppPage() {
     }
   }, [searchParams, rooms, currentRoomSlug])
 
-  // Step 4: Load initial messages and set up SSE for real-time updates
+  // Step 4: Load messages and set up Supabase Realtime
   useEffect(() => {
-    if (!currentRoomSlug) {
+    if (!currentRoomSlug || !currentRoom) {
       setMessages([])
       messageIdsRef.current.clear()
       return
     }
 
-    // Close existing SSE connection
-    if (sseEventSourceRef.current) {
-      sseEventSourceRef.current.close()
-      sseEventSourceRef.current = null
+    // Clean up previous subscription
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current)
+      realtimeChannelRef.current = null
     }
     messageIdsRef.current.clear()
 
@@ -195,78 +196,107 @@ export default function AppPage() {
 
     loadInitialMessages()
 
-    // Set up Server-Sent Events for real-time updates
+    // Set up Supabase Realtime subscription
     try {
-      console.log('[SSE] Setting up EventSource for room:', currentRoomSlug)
-      const eventSource = new EventSource(`/api/rooms/${currentRoomSlug}/messages/stream`)
+      console.log('[REALTIME] Setting up subscription for room:', currentRoom.id)
+      
+      const channel = supabase
+        .channel(`room:${currentRoom.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'Message',
+            filter: `roomId=eq.${currentRoom.id}`,
+          },
+          async (payload: any) => {
+            if (cancelled || !isMountedRef.current) return
 
-      eventSource.onopen = () => {
-        console.log('[SSE] ✅ Connection opened')
-      }
-
-      eventSource.onmessage = (event) => {
-        if (cancelled || !isMountedRef.current) return
-
-        try {
-          const data = JSON.parse(event.data)
-
-          if (data.type === 'connected') {
-            console.log('[SSE] Connected to stream')
-            return
-          }
-
-          if (data.type === 'message' && data.message) {
-            const newMsg = data.message
-
-            // Prevent duplicates
-            if (messageIdsRef.current.has(newMsg.id)) {
+            const newMessageId = payload.new?.id
+            if (!newMessageId) {
+              console.warn('[REALTIME] Received event without message ID')
               return
             }
 
-            messageIdsRef.current.add(newMsg.id)
+            // Prevent duplicate messages
+            if (messageIdsRef.current.has(newMessageId)) {
+              console.log('[REALTIME] Duplicate message ignored:', newMessageId)
+              return
+            }
 
-            if (!cancelled && isMountedRef.current) {
-              setMessages((prev) => {
-                // Final duplicate check
-                if (prev.some((m) => m.id === newMsg.id)) {
-                  return prev
+            console.log('[REALTIME] New message received:', newMessageId)
+
+            // Fetch the full message with user data
+            try {
+              const msgRes = await fetch(
+                `/api/rooms/${currentRoomSlug}/messages?limit=1&after=${newMessageId}`,
+                { cache: 'no-store' }
+              )
+
+              if (msgRes.ok) {
+                const msgData = await msgRes.json()
+                if (Array.isArray(msgData) && msgData.length > 0) {
+                  const newMsg = msgData[0]
+                  
+                  // Double-check for duplicates
+                  if (!messageIdsRef.current.has(newMsg.id)) {
+                    messageIdsRef.current.add(newMsg.id)
+                    
+                    if (!cancelled && isMountedRef.current) {
+                      setMessages((prev) => {
+                        // Final duplicate check
+                        if (prev.some((m) => m.id === newMsg.id)) {
+                          return prev
+                        }
+                        return [...prev, newMsg].sort((a, b) => 
+                          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                        )
+                      })
+                      
+                      // Auto-scroll to new message
+                      setTimeout(() => {
+                        const messagesEnd = document.getElementById('messages-end')
+                        messagesEnd?.scrollIntoView({ behavior: 'smooth' })
+                      }, 100)
+                    }
+                  }
                 }
-                return [...prev, newMsg].sort((a, b) => 
-                  new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-                )
-              })
-
-              // Auto-scroll to new message
-              setTimeout(() => {
-                const messagesEnd = document.getElementById('messages-end')
-                messagesEnd?.scrollIntoView({ behavior: 'smooth' })
-              }, 100)
+              } else {
+                console.error('[REALTIME] Failed to fetch message:', msgRes.status)
+              }
+            } catch (err) {
+              console.error('[REALTIME] Error fetching new message:', err)
             }
           }
-        } catch (err) {
-          console.error('[SSE] Error parsing message:', err)
-        }
-      }
+        )
+        .subscribe((status) => {
+          console.log('[REALTIME] Subscription status:', status)
+          if (status === 'SUBSCRIBED') {
+            console.log('[REALTIME] ✅ Successfully subscribed to room:', currentRoomSlug)
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('[REALTIME] ❌ Channel error')
+          } else if (status === 'TIMED_OUT') {
+            console.error('[REALTIME] ⏱️ Connection timed out')
+          } else if (status === 'CLOSED') {
+            console.log('[REALTIME] 🔒 Channel closed')
+          }
+        })
 
-      eventSource.onerror = (err) => {
-        console.error('[SSE] ❌ EventSource error:', err)
-        // EventSource will automatically reconnect
-      }
-
-      sseEventSourceRef.current = eventSource
-    } catch (sseError: any) {
-      console.error('[SSE] Failed to set up EventSource:', sseError)
+      realtimeChannelRef.current = channel
+    } catch (realtimeError: any) {
+      console.error('[REALTIME] Failed to set up subscription:', realtimeError)
     }
 
     return () => {
       cancelled = true
-      if (sseEventSourceRef.current) {
-        sseEventSourceRef.current.close()
-        sseEventSourceRef.current = null
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current)
+        realtimeChannelRef.current = null
       }
       messageIdsRef.current.clear()
     }
-  }, [currentRoomSlug])
+  }, [currentRoomSlug, currentRoom])
 
   // Step 5: Handle room joining
   const handleJoinRoom = useCallback((slug: string) => {

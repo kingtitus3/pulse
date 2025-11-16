@@ -9,12 +9,18 @@ if (!process.env.SUPABASE_ANON_KEY) {
   throw new Error('SUPABASE_ANON_KEY environment variable is required')
 }
 
+// Client-side Supabase client with Realtime enabled
 export const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY,
   {
     auth: {
       persistSession: false,
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
     },
   }
 )
@@ -39,4 +45,3 @@ export function getSupabaseAdmin() {
     }
   )
 }
-

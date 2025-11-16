@@ -20,34 +20,52 @@ export async function GET(
       return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
-    // Get distinct users who have sent messages in this room (as a proxy for "online")
-    // In a real implementation, you'd use Supabase Presence or a separate online_users table
-    const { data: messages, error: messagesError } = await supabase
-      .from('Message')
-      .select('userId, user:User!Message_userId_fkey(id, displayName, avatar)')
-      .eq('roomId', room.id)
-      .is('deletedAt', null)
-      .order('createdAt', { ascending: false })
-      .limit(100) // Get recent messages to find active users
+    // NEW: Use presence table instead of recent messages
+    const now = new Date()
+    const cutoff = new Date(now.getTime() - 30 * 1000).toISOString() // last 30 seconds
 
-    if (messagesError) {
-      console.error('[ROOM USERS API] Error fetching messages:', messagesError)
+    // 1) Get presence rows for this room in last 30s
+    const { data: presenceRows, error: presenceError } = await supabase
+      .from('RoomPresence')
+      .select('userId, lastSeenAt')
+      .eq('roomId', room.id)
+      .gte('lastSeenAt', cutoff)
+
+    if (presenceError) {
+      console.error('[ROOM USERS API] Error fetching presence:', presenceError)
       return NextResponse.json({ users: [], count: 0 })
     }
 
-    // Get unique users from recent messages
-    const uniqueUsers = new Map()
-    messages?.forEach((msg: any) => {
-      if (msg.user && msg.userId && !uniqueUsers.has(msg.userId)) {
-        uniqueUsers.set(msg.userId, {
-          id: msg.user.id || msg.userId,
-          displayName: msg.user.displayName || 'Unknown',
-          avatar: msg.user.avatar || null,
-        })
-      }
-    })
+    if (!presenceRows || presenceRows.length === 0) {
+      return NextResponse.json({ users: [], count: 0 })
+    }
 
-    const users = Array.from(uniqueUsers.values())
+    // 2) Get unique user IDs
+    const userIds = Array.from(
+      new Set(presenceRows.map((row: any) => row.userId).filter(Boolean))
+    )
+
+    if (userIds.length === 0) {
+      return NextResponse.json({ users: [], count: 0 })
+    }
+
+    // 3) Fetch users for those IDs
+    const { data: usersData, error: usersError } = await supabase
+      .from('User')
+      .select('id, displayName, avatar')
+      .in('id', userIds)
+
+    if (usersError) {
+      console.error('[ROOM USERS API] Error fetching users:', usersError)
+      return NextResponse.json({ users: [], count: 0 })
+    }
+
+    const users =
+      usersData?.map((u: any) => ({
+        id: u.id,
+        displayName: u.displayName || 'Unknown',
+        avatar: u.avatar || null,
+      })) || []
 
     return NextResponse.json({
       users,

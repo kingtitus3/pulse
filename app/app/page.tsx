@@ -286,6 +286,26 @@ export default function AppPage() {
 
     loadInitialMessages()
 
+    // Send presence heartbeat for this room
+    const sendPresence = async () => {
+      if (cancelled || !isMountedRef.current) return
+      try {
+        const res = await fetch(`/api/rooms/${currentRoomSlug}/presence`, {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' },
+        })
+        if (!res.ok) {
+          console.warn('[PRESENCE] Failed to update presence:', res.status)
+        }
+      } catch (err) {
+        console.error('[PRESENCE] Error sending presence:', err)
+      }
+    }
+
+    // Initial presence ping
+    sendPresence()
+
     // Load online users for chatters list
     const loadOnlineUsers = async () => {
       if (cancelled || !isMountedRef.current) return
@@ -317,6 +337,8 @@ export default function AppPage() {
     const usersPollInterval = setInterval(() => {
       if (!cancelled && isMountedRef.current) {
         loadOnlineUsers()
+        // Also refresh presence heartbeat so we stay marked online
+        sendPresence()
       }
     }, 10000)
 

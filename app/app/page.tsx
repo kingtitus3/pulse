@@ -219,6 +219,40 @@ export default function AppPage() {
 
     loadInitialMessages()
 
+    // Load online users for chatters list
+    const loadOnlineUsers = async () => {
+      if (cancelled || !isMountedRef.current) return
+      
+      try {
+        const res = await fetch(`/api/rooms/${currentRoomSlug}/users`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        })
+        
+        if (cancelled || !isMountedRef.current) return
+        
+        if (res.ok) {
+          const data = await res.json()
+          if (data.users && Array.isArray(data.users)) {
+            // Update chatters list via store
+            const { useChatStore } = await import('@/store/useChatStore')
+            useChatStore.getState().setOnlineUsers(currentRoomSlug, data.users)
+            console.log('[CHATTERS] Loaded', data.users.length, 'users for room:', currentRoomSlug)
+          }
+        }
+      } catch (err) {
+        console.error('[CHATTERS] Error loading users:', err)
+      }
+    }
+
+    // Load users initially and then every 10 seconds
+    loadOnlineUsers()
+    const usersPollInterval = setInterval(() => {
+      if (!cancelled && isMountedRef.current) {
+        loadOnlineUsers()
+      }
+    }, 10000)
+
     // Set up Pusher subscription for instant updates
     if (pusherClientRef.current) {
       try {
@@ -300,6 +334,9 @@ export default function AppPage() {
 
     return () => {
       cancelled = true
+      if (usersPollInterval) {
+        clearInterval(usersPollInterval)
+      }
       if (pusherChannelRef.current) {
         pusherChannelRef.current.unbind_all()
         pusherChannelRef.current.unsubscribe()

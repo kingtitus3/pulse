@@ -65,6 +65,41 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}))
         console.error('[SEND] Failed:', res.status, errorData)
+        
+        // If session was just created, retry once
+        if (res.status === 401 && errorData.error === 'Session created, please retry') {
+          // Wait a moment for cookie to be set, then retry
+          setTimeout(async () => {
+            try {
+              const retryRes = await fetch(`/api/rooms/${roomSlug}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'text',
+                  content: messageContent,
+                }),
+              })
+              
+              if (retryRes.ok) {
+                inputRef.current?.focus()
+                return
+              }
+              
+              const retryError = await retryRes.json().catch(() => ({}))
+              setContent(messageContent)
+              alert(`Failed to send: ${retryError.error || retryRes.statusText}`)
+            } catch (retryErr) {
+              setContent(messageContent)
+              alert('Failed to send message. Please try again.')
+            } finally {
+              if (inputRef.current) {
+                inputRef.current.disabled = false
+              }
+            }
+          }, 500)
+          return
+        }
+        
         // Restore content on error
         setContent(messageContent)
         alert(`Failed to send: ${errorData.error || res.statusText}`)

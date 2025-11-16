@@ -172,14 +172,33 @@ export async function POST(
   { params }: { params: { slug: string } }
 ) {
   try {
-    const { getSessionFromRequest } = await import('@/lib/session')
+    const { getSessionFromRequest, createAnonymousSession } = await import('@/lib/session')
     const { checkRateLimit } = await import('@/lib/rateLimit')
     const { sanitizeMessage } = await import('@/lib/sanitize')
 
-    const sessionData = await getSessionFromRequest(req)
+    // Try to get existing session
+    let sessionData = await getSessionFromRequest(req)
 
+    // If no session exists, create one automatically
     if (!sessionData) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      console.log('[MESSAGES POST] No session found, creating anonymous session...')
+      try {
+        sessionData = await createAnonymousSession(req)
+        
+        // Set cookie in response
+        const response = NextResponse.json({ error: 'Session created, please retry' }, { status: 401 })
+        response.cookies.set('pulse_session', sessionData.session.id, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 60 * 60 * 24 * 30, // 30 days
+          path: '/',
+        })
+        return response
+      } catch (sessionError: any) {
+        console.error('[MESSAGES POST] Failed to create session:', sessionError)
+        return NextResponse.json({ error: 'Failed to create session' }, { status: 500 })
+      }
     }
 
     const slug = params.slug

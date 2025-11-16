@@ -251,6 +251,15 @@ export async function POST(
       },
     }
 
+    // Broadcast new message via Pusher for instant delivery
+    try {
+      await pusherServer.trigger(`room-${room.id}`, 'new-message', message)
+      console.log('[PUSHER] Message broadcasted to room:', room.id)
+    } catch (pusherError: any) {
+      console.error('[PUSHER] Failed to broadcast message:', pusherError)
+      // Don't fail the request if Pusher fails
+    }
+
     return NextResponse.json(message)
   } catch (error) {
     logger.error('Failed to create message', { error })

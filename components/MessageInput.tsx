@@ -106,7 +106,20 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
         return
       }
 
-      // Success - message will appear via polling
+      // Success - parse created message and dispatch local event for instant UI update
+      try {
+        const newMessage = await res.json()
+        if (newMessage && typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('pulse:new-message', {
+              detail: { message: newMessage, roomSlug },
+            })
+          )
+        }
+      } catch (parseError) {
+        console.warn('[SEND] Could not parse message JSON after send:', parseError)
+      }
+
       inputRef.current?.focus()
     } catch (error: any) {
       console.error('[SEND] Error:', error)
@@ -145,6 +158,19 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
       })
 
       if (res.ok) {
+        try {
+          const newMessage = await res.json()
+          if (newMessage && typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('pulse:new-message', {
+                detail: { message: newMessage, roomSlug },
+              })
+            )
+          }
+        } catch (parseError) {
+          console.warn('[SEND] Could not parse sticker message JSON:', parseError)
+        }
+
         // Record sticker use
         await fetch('/api/stickers/use', {
           method: 'POST',
@@ -161,7 +187,7 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
 
   const handleGifSelect = async (gifUrl: string) => {
     try {
-      await fetch(`/api/rooms/${roomSlug}/messages`, {
+      const res = await fetch(`/api/rooms/${roomSlug}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -169,6 +195,20 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
           mediaUrl: gifUrl,
         }),
       })
+      if (res.ok) {
+        try {
+          const newMessage = await res.json()
+          if (newMessage && typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('pulse:new-message', {
+                detail: { message: newMessage, roomSlug },
+              })
+            )
+          }
+        } catch (parseError) {
+          console.warn('[SEND] Could not parse GIF message JSON:', parseError)
+        }
+      }
       setShowGifs(false)
     } catch (error) {
       console.error('Failed to send GIF:', error)
@@ -177,7 +217,7 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
 
   const handleImageSelect = async (imageUrl: string, width: number, height: number) => {
     try {
-      await fetch(`/api/rooms/${roomSlug}/messages`, {
+      const res = await fetch(`/api/rooms/${roomSlug}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -187,6 +227,20 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
           height,
         }),
       })
+      if (res.ok) {
+        try {
+          const newMessage = await res.json()
+          if (newMessage && typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('pulse:new-message', {
+                detail: { message: newMessage, roomSlug },
+              })
+            )
+          }
+        } catch (parseError) {
+          console.warn('[SEND] Could not parse image message JSON:', parseError)
+        }
+      }
     } catch (error) {
       console.error('Failed to send image:', error)
     }

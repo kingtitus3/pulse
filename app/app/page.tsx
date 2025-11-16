@@ -54,6 +54,66 @@ export default function AppPage() {
   const isMountedRef = useRef(true)
   const messageIdsRef = useRef<Set<string>>(new Set())
 
+  // Step 0: Listen for local \"message sent\" events from MessageInput
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handler = (event: any) => {
+      const detail = event.detail || {}
+      const newMsg = detail.message as Message | undefined
+      const slug = detail.roomSlug as string | undefined
+
+      if (!newMsg || !newMsg.id) {
+        console.warn('[LOCAL MESSAGE] Invalid message payload:', detail)
+        return
+      }
+
+      // Ensure it belongs to the current room
+      if (!currentRoom || newMsg.roomId !== currentRoom.id) {
+        return
+      }
+
+      // If a slug was provided, ensure it matches
+      if (slug && slug !== currentRoomSlug) {
+        return
+      }
+
+      // Prevent duplicates
+      if (messageIdsRef.current.has(newMsg.id)) {
+        console.log('[LOCAL MESSAGE] Duplicate message ignored:', newMsg.id)
+        return
+      }
+
+      console.log('[LOCAL MESSAGE] Adding new message to state:', newMsg.id)
+      messageIdsRef.current.add(newMsg.id)
+
+      if (!isMountedRef.current) return
+
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === newMsg.id)) {
+          return prev
+        }
+        const updated = [...prev, newMsg].sort((a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        )
+        console.log('[LOCAL MESSAGE] Updated messages count:', prev.length, '->', updated.length)
+        return updated
+      })
+
+      // Auto-scroll to bottom
+      setTimeout(() => {
+        const messagesEnd = document.getElementById('messages-end')
+        messagesEnd?.scrollIntoView({ behavior: 'smooth' })
+      }, 50)
+    }
+
+    window.addEventListener('pulse:new-message', handler as EventListener)
+
+    return () => {
+      window.removeEventListener('pulse:new-message', handler as EventListener)
+    }
+  }, [currentRoomSlug, currentRoom])
+
   // Initialize
   useEffect(() => {
     isMountedRef.current = true

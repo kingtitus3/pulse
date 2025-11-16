@@ -281,6 +281,21 @@ export default function AppPage() {
       }
     } else {
       console.warn('[PUSHER] Pusher client not initialized - check NEXT_PUBLIC_PUSHER_KEY')
+      // Fallback: poll for new messages every 2 seconds
+      console.log('[POLLING] Setting up fallback polling (2s interval)')
+      const pollInterval = setInterval(() => {
+        if (cancelled || !isMountedRef.current) {
+          clearInterval(pollInterval)
+          return
+        }
+        loadInitialMessages()
+      }, 2000)
+      
+      return () => {
+        cancelled = true
+        clearInterval(pollInterval)
+        messageIdsRef.current.clear()
+      }
     }
 
     return () => {

@@ -28,20 +28,27 @@ export const supabase = createClient(
 // Admin client for server-side operations
 export function getSupabaseAdmin() {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required')
+    console.error('[SUPABASE] SUPABASE_SERVICE_ROLE_KEY is missing')
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required. Please set it in Vercel environment variables.')
   }
 
   if (!process.env.SUPABASE_URL) {
-    throw new Error('SUPABASE_URL environment variable is required')
+    console.error('[SUPABASE] SUPABASE_URL is missing')
+    throw new Error('SUPABASE_URL environment variable is required. Please set it in Vercel environment variables.')
   }
 
-  return createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    {
-      auth: {
-        persistSession: false,
-      },
-    }
-  )
+  try {
+    return createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          persistSession: false,
+        },
+      }
+    )
+  } catch (error: any) {
+    console.error('[SUPABASE] Failed to create admin client:', error.message)
+    throw new Error(`Failed to initialize Supabase: ${error.message}`)
+  }
 }

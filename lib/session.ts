@@ -155,49 +155,8 @@ export async function createAnonymousSession(
     ipHash = hash.substring(0, 16) // Truncate to 16 chars
   }
 
-  // Try Prisma first
-  try {
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        displayName,
-        avatar,
-        isAnonymous: true,
-        role: 'user',
-      },
-    })
-
-    // Create session
-    const session = await prisma.session.create({
-      data: {
-        userId: user.id,
-        ipHash,
-      },
-    })
-
-    return {
-      session: {
-        id: session.id,
-        userId: session.userId,
-        ipHash: session.ipHash,
-        createdAt: session.createdAt,
-        lastSeenAt: session.lastSeenAt,
-      },
-      user: {
-        id: user.id,
-        displayName: user.displayName,
-        avatar: user.avatar,
-        isAnonymous: user.isAnonymous,
-        role: user.role,
-        bio: user.bio,
-        tags: user.tags,
-        showWallets: user.showWallets,
-        createdAt: user.createdAt,
-      },
-    }
-  } catch (prismaError: any) {
-    console.warn('[SESSION] Prisma failed, using Supabase:', prismaError.message)
-  }
+  // Use Supabase directly (more reliable in serverless)
+  // Skip Prisma to avoid connection pool issues
 
   // Fallback to Supabase
   try {

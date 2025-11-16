@@ -46,21 +46,20 @@ export default function AppPage() {
   const [showJoinDialog, setShowJoinDialog] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   
-  // Refs for stability - prevent race conditions
+  // Refs for stability
   const roomsLoadedRef = useRef(false)
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const sseEventSourceRef = useRef<EventSource | null>(null)
   const isMountedRef = useRef(true)
   const messageIdsRef = useRef<Set<string>>(new Set())
-  const lastMessageIdRef = useRef<string | null>(null)
 
   // Initialize
   useEffect(() => {
     isMountedRef.current = true
     return () => {
       isMountedRef.current = false
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current)
-        pollIntervalRef.current = null
+      if (sseEventSourceRef.current) {
+        sseEventSourceRef.current.close()
+        sseEventSourceRef.current = null
       }
     }
   }, [])
@@ -140,106 +139,24 @@ export default function AppPage() {
     }
   }, [searchParams, rooms, currentRoomSlug])
 
-  // Step 4: Load messages with aggressive polling (1 second for near-instant feel)
+  // Step 4: Load initial messages and set up SSE for real-time updates
   useEffect(() => {
     if (!currentRoomSlug) {
       setMessages([])
       messageIdsRef.current.clear()
-      lastMessageIdRef.current = null
       return
     }
 
-    // Clear any existing polling
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current)
-      pollIntervalRef.current = null
+    // Close existing SSE connection
+    if (sseEventSourceRef.current) {
+      sseEventSourceRef.current.close()
+      sseEventSourceRef.current = null
     }
     messageIdsRef.current.clear()
-    lastMessageIdRef.current = null
 
     let cancelled = false
 
-    const loadMessages = async () => {
-      if (cancelled || !isMountedRef.current) return
-
-      try {
-        // Only fetch new messages if we have a last message ID
-        const url = lastMessageIdRef.current
-          ? `/api/rooms/${currentRoomSlug}/messages?limit=50&after=${lastMessageIdRef.current}`
-          : `/api/rooms/${currentRoomSlug}/messages?limit=50`
-
-        const res = await fetch(url, {
-          cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache' }
-        })
-
-        if (cancelled || !isMountedRef.current) return
-
-        if (!res.ok) {
-          console.error('[MESSAGES] Failed:', res.status)
-          return
-        }
-
-        const data = await res.json()
-        if (cancelled || !isMountedRef.current) return
-
-        if (Array.isArray(data)) {
-          // Filter out invalid messages
-          const validMessages = data.filter(
-            (msg: Message) => 
-              msg && 
-              msg.id && 
-              msg.user && 
-              msg.user.displayName &&
-              msg.roomId
-          )
-
-          if (validMessages.length > 0) {
-            // Track message IDs to prevent duplicates
-            const newIds = new Set(messageIdsRef.current)
-            const newMessages: Message[] = []
-
-            validMessages.forEach((msg: Message) => {
-              if (!newIds.has(msg.id)) {
-                newIds.add(msg.id)
-                newMessages.push(msg)
-              }
-            })
-
-            // Update last message ID for next poll
-            const latestMessage = validMessages[validMessages.length - 1]
-            if (latestMessage && latestMessage.id) {
-              lastMessageIdRef.current = latestMessage.id
-            }
-
-            messageIdsRef.current = newIds
-
-            if (!cancelled && isMountedRef.current && newMessages.length > 0) {
-              setMessages((prev) => {
-                // Merge with existing messages, avoiding duplicates
-                const existingIds = new Set(prev.map(m => m.id))
-                const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id))
-                return [...prev, ...uniqueNewMessages].sort((a, b) => 
-                  new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-                )
-              })
-
-              // Auto-scroll to new message
-              setTimeout(() => {
-                const messagesEnd = document.getElementById('messages-end')
-                messagesEnd?.scrollIntoView({ behavior: 'smooth' })
-              }, 100)
-            }
-          }
-        }
-      } catch (err) {
-        if (!cancelled && isMountedRef.current) {
-          console.error('[MESSAGES] Error:', err)
-        }
-      }
-    }
-
-    // Load initial messages (full history)
+    // Load initial messages
     const loadInitialMessages = async () => {
       if (cancelled || !isMountedRef.current) return
 
@@ -253,7 +170,7 @@ export default function AppPage() {
 
         if (res.ok) {
           const data = await res.json()
-          if (Array.isArray(data) && data.length > 0) {
+          if (Array.isArray(data)) {
             const validMessages = data.filter(
               (msg: Message) => 
                 msg && 
@@ -265,12 +182,6 @@ export default function AppPage() {
 
             const newIds = new Set(validMessages.map(m => m.id))
             messageIdsRef.current = newIds
-
-            // Set last message ID for incremental polling
-            const latestMessage = validMessages[validMessages.length - 1]
-            if (latestMessage && latestMessage.id) {
-              lastMessageIdRef.current = latestMessage.id
-            }
 
             if (!cancelled && isMountedRef.current) {
               setMessages(validMessages)
@@ -284,21 +195,76 @@ export default function AppPage() {
 
     loadInitialMessages()
 
-    // Poll every 1 second for new messages (aggressive polling for near-instant feel)
-    pollIntervalRef.current = setInterval(() => {
-      if (!cancelled && isMountedRef.current) {
-        loadMessages()
+    // Set up Server-Sent Events for real-time updates
+    try {
+      console.log('[SSE] Setting up EventSource for room:', currentRoomSlug)
+      const eventSource = new EventSource(`/api/rooms/${currentRoomSlug}/messages/stream`)
+
+      eventSource.onopen = () => {
+        console.log('[SSE] ✅ Connection opened')
       }
-    }, 1000)
+
+      eventSource.onmessage = (event) => {
+        if (cancelled || !isMountedRef.current) return
+
+        try {
+          const data = JSON.parse(event.data)
+
+          if (data.type === 'connected') {
+            console.log('[SSE] Connected to stream')
+            return
+          }
+
+          if (data.type === 'message' && data.message) {
+            const newMsg = data.message
+
+            // Prevent duplicates
+            if (messageIdsRef.current.has(newMsg.id)) {
+              return
+            }
+
+            messageIdsRef.current.add(newMsg.id)
+
+            if (!cancelled && isMountedRef.current) {
+              setMessages((prev) => {
+                // Final duplicate check
+                if (prev.some((m) => m.id === newMsg.id)) {
+                  return prev
+                }
+                return [...prev, newMsg].sort((a, b) => 
+                  new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                )
+              })
+
+              // Auto-scroll to new message
+              setTimeout(() => {
+                const messagesEnd = document.getElementById('messages-end')
+                messagesEnd?.scrollIntoView({ behavior: 'smooth' })
+              }, 100)
+            }
+          }
+        } catch (err) {
+          console.error('[SSE] Error parsing message:', err)
+        }
+      }
+
+      eventSource.onerror = (err) => {
+        console.error('[SSE] ❌ EventSource error:', err)
+        // EventSource will automatically reconnect
+      }
+
+      sseEventSourceRef.current = eventSource
+    } catch (sseError: any) {
+      console.error('[SSE] Failed to set up EventSource:', sseError)
+    }
 
     return () => {
       cancelled = true
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current)
-        pollIntervalRef.current = null
+      if (sseEventSourceRef.current) {
+        sseEventSourceRef.current.close()
+        sseEventSourceRef.current = null
       }
       messageIdsRef.current.clear()
-      lastMessageIdRef.current = null
     }
   }, [currentRoomSlug])
 

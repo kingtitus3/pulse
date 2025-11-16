@@ -30,16 +30,20 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
     // Don't allow sending while processing
     if (inputRef.current?.disabled) return
 
-    // Ensure session exists first
+    // Ensure session exists first (non-blocking, will retry on message send if needed)
     try {
-      const sessionRes = await fetch('/api/session/ensure')
+      const sessionRes = await fetch('/api/session/ensure', {
+        method: 'GET',
+        cache: 'no-store',
+      })
       if (!sessionRes.ok) {
-        throw new Error('Session creation failed')
+        const errorData = await sessionRes.json().catch(() => ({}))
+        console.warn('[SESSION] Failed to ensure session:', sessionRes.status, errorData)
+        // Don't block - try to send message anyway, API will handle auth
       }
     } catch (err) {
-      console.error('Failed to ensure session:', err)
-      alert('Failed to create session. Please refresh the page.')
-      return
+      console.warn('[SESSION] Session check failed (non-blocking):', err)
+      // Don't block - try to send message anyway
     }
 
     // Disable input while sending

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 import { PrismaClient } from '@prisma/client'
 import { createId } from '@paralleldrive/cuid2'
+import { getSupabaseAdmin } from './supabaseClient'
 
 const prisma = new PrismaClient()
 
@@ -36,48 +37,106 @@ export async function getSessionFromRequest(
     return null
   }
 
-  const session = await prisma.session.findUnique({
-    where: { id: sessionId },
-    include: { user: true },
-  })
+  // Try Prisma first
+  try {
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      include: { user: true },
+    })
 
-  if (!session) {
-    return null
+    if (session) {
+      // Update lastSeenAt
+      await prisma.session.update({
+        where: { id: sessionId },
+        data: { lastSeenAt: new Date() },
+      })
+
+      return {
+        session: {
+          id: session.id,
+          userId: session.userId,
+          ipHash: session.ipHash,
+          createdAt: session.createdAt,
+          lastSeenAt: session.lastSeenAt,
+        },
+        user: {
+          id: session.user.id,
+          displayName: session.user.displayName,
+          avatar: session.user.avatar,
+          isAnonymous: session.user.isAnonymous,
+          role: session.user.role,
+          bio: session.user.bio,
+          tags: session.user.tags,
+          showWallets: session.user.showWallets,
+          createdAt: session.user.createdAt,
+        },
+      }
+    }
+  } catch (prismaError: any) {
+    console.warn('[SESSION] Prisma failed, trying Supabase:', prismaError.message)
   }
 
-  // Update lastSeenAt
-  await prisma.session.update({
-    where: { id: sessionId },
-    data: { lastSeenAt: new Date() },
-  })
+  // Fallback to Supabase
+  try {
+    const supabase = getSupabaseAdmin()
+    const { data: sessionData, error: sessionError } = await supabase
+      .from('Session')
+      .select(`
+        *,
+        user:User!Session_userId_fkey (
+          id,
+          displayName,
+          avatar,
+          isAnonymous,
+          role,
+          bio,
+          tags,
+          showWallets,
+          createdAt
+        )
+      `)
+      .eq('id', sessionId)
+      .single()
 
-  return {
-    session: {
-      id: session.id,
-      userId: session.userId,
-      ipHash: session.ipHash,
-      createdAt: session.createdAt,
-      lastSeenAt: session.lastSeenAt,
-    },
-    user: {
-      id: session.user.id,
-      displayName: session.user.displayName,
-      avatar: session.user.avatar,
-      isAnonymous: session.user.isAnonymous,
-      role: session.user.role,
-      bio: session.user.bio,
-      tags: session.user.tags,
-      showWallets: session.user.showWallets,
-      createdAt: session.user.createdAt,
-    },
+    if (sessionError || !sessionData) {
+      return null
+    }
+
+    // Update lastSeenAt
+    await supabase
+      .from('Session')
+      .update({ lastSeenAt: new Date().toISOString() })
+      .eq('id', sessionId)
+
+    return {
+      session: {
+        id: sessionData.id,
+        userId: sessionData.userId,
+        ipHash: sessionData.ipHash,
+        createdAt: new Date(sessionData.createdAt),
+        lastSeenAt: new Date(sessionData.lastSeenAt),
+      },
+      user: {
+        id: sessionData.user.id,
+        displayName: sessionData.user.displayName,
+        avatar: sessionData.user.avatar,
+        isAnonymous: sessionData.user.isAnonymous,
+        role: sessionData.user.role,
+        bio: sessionData.user.bio,
+        tags: sessionData.user.tags || [],
+        showWallets: sessionData.user.showWallets,
+        createdAt: new Date(sessionData.user.createdAt),
+      },
+    }
+  } catch (supabaseError: any) {
+    console.error('[SESSION] Supabase failed:', supabaseError.message)
+    return null
   }
 }
 
 export async function createAnonymousSession(
   req: NextRequest
 ): Promise<SessionData> {
-  const prisma = new PrismaClient()
-
   // Generate random display name
   const randomNum = Math.floor(Math.random() * 1000)
   const displayName = `NeonDegen_${randomNum}`
@@ -85,16 +144,6 @@ export async function createAnonymousSession(
   // Preset avatar IDs (simple numbered avatars)
   const avatarIds = ['avatar-1', 'avatar-2', 'avatar-3', 'avatar-4', 'avatar-5']
   const avatar = avatarIds[Math.floor(Math.random() * avatarIds.length)]
-
-  // Create user
-  const user = await prisma.user.create({
-    data: {
-      displayName,
-      avatar,
-      isAnonymous: true,
-      role: 'user',
-    },
-  })
 
   // Hash IP if available (optional)
   let ipHash: string | null = null
@@ -108,33 +157,108 @@ export async function createAnonymousSession(
     ipHash = hash.substring(0, 16) // Truncate to 16 chars
   }
 
-  // Create session
-  const session = await prisma.session.create({
-    data: {
-      userId: user.id,
-      ipHash,
-    },
-  })
+  // Try Prisma first
+  try {
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        displayName,
+        avatar,
+        isAnonymous: true,
+        role: 'user',
+      },
+    })
 
-  return {
-    session: {
-      id: session.id,
-      userId: session.userId,
-      ipHash: session.ipHash,
-      createdAt: session.createdAt,
-      lastSeenAt: session.lastSeenAt,
-    },
-    user: {
-      id: user.id,
-      displayName: user.displayName,
-      avatar: user.avatar,
-      isAnonymous: user.isAnonymous,
-      role: user.role,
-      bio: user.bio,
-      tags: user.tags,
-      showWallets: user.showWallets,
-      createdAt: user.createdAt,
-    },
+    // Create session
+    const session = await prisma.session.create({
+      data: {
+        userId: user.id,
+        ipHash,
+      },
+    })
+
+    return {
+      session: {
+        id: session.id,
+        userId: session.userId,
+        ipHash: session.ipHash,
+        createdAt: session.createdAt,
+        lastSeenAt: session.lastSeenAt,
+      },
+      user: {
+        id: user.id,
+        displayName: user.displayName,
+        avatar: user.avatar,
+        isAnonymous: user.isAnonymous,
+        role: user.role,
+        bio: user.bio,
+        tags: user.tags,
+        showWallets: user.showWallets,
+        createdAt: user.createdAt,
+      },
+    }
+  } catch (prismaError: any) {
+    console.warn('[SESSION] Prisma failed, using Supabase:', prismaError.message)
+  }
+
+  // Fallback to Supabase
+  try {
+    const supabase = getSupabaseAdmin()
+    
+    // Create user
+    const { data: userData, error: userError } = await supabase
+      .from('User')
+      .insert({
+        displayName,
+        avatar,
+        isAnonymous: true,
+        role: 'user',
+        tags: [],
+        showWallets: false,
+      })
+      .select()
+      .single()
+
+    if (userError || !userData) {
+      throw new Error(`Failed to create user: ${userError?.message || 'Unknown error'}`)
+    }
+
+    // Create session
+    const { data: sessionData, error: sessionError } = await supabase
+      .from('Session')
+      .insert({
+        userId: userData.id,
+        ipHash,
+      })
+      .select()
+      .single()
+
+    if (sessionError || !sessionData) {
+      throw new Error(`Failed to create session: ${sessionError?.message || 'Unknown error'}`)
+    }
+
+    return {
+      session: {
+        id: sessionData.id,
+        userId: sessionData.userId,
+        ipHash: sessionData.ipHash,
+        createdAt: new Date(sessionData.createdAt),
+        lastSeenAt: new Date(sessionData.lastSeenAt),
+      },
+      user: {
+        id: userData.id,
+        displayName: userData.displayName,
+        avatar: userData.avatar,
+        isAnonymous: userData.isAnonymous,
+        role: userData.role,
+        bio: userData.bio,
+        tags: userData.tags || [],
+        showWallets: userData.showWallets,
+        createdAt: new Date(userData.createdAt),
+      },
+    }
+  } catch (supabaseError: any) {
+    console.error('[SESSION] Supabase creation failed:', supabaseError.message)
+    throw new Error(`Failed to create session: ${supabaseError.message}`)
   }
 }
-

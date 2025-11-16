@@ -258,13 +258,21 @@ export async function createAnonymousSession(
         hint: sessionError.hint,
       })
       // Try to clean up the user if session creation fails
-      await supabase.from('User').delete().eq('id', userData.id).catch(() => {})
+      try {
+        await supabase.from('User').delete().eq('id', userData.id)
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
       throw new Error(`Failed to create session: ${sessionError.message} (code: ${sessionError.code})`)
     }
 
     if (!sessionData) {
       // Try to clean up the user if session creation fails
-      await supabase.from('User').delete().eq('id', userData.id).catch(() => {})
+      try {
+        await supabase.from('User').delete().eq('id', userData.id)
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
       throw new Error('Session creation returned no data')
     }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { getSupabaseAdmin } from '@/lib/supabaseClient'
 import { pusherServer } from '@/lib/pusher'
+import { createId } from '@paralleldrive/cuid2'
 
 export async function GET(
   req: NextRequest,
@@ -199,9 +200,11 @@ export async function POST(
     }
 
     // Create message
+    const messageId = createId() // Generate CUID for message
     const { data: messageData, error: messageError } = await supabase
       .from('Message')
       .insert({
+        id: messageId,
         roomId: room.id,
         userId: sessionData.user.id,
         type,
@@ -220,9 +223,23 @@ export async function POST(
       `)
       .single()
 
-    if (messageError || !messageData) {
-      console.error('[MESSAGES POST] Failed to create message:', messageError)
-      return NextResponse.json({ error: 'Failed to create message' }, { status: 500 })
+    if (messageError) {
+      console.error('[MESSAGES POST] Failed to create message:', {
+        message: messageError.message,
+        code: messageError.code,
+        details: messageError.details,
+        hint: messageError.hint,
+      })
+      return NextResponse.json({ 
+        error: 'Failed to create message',
+        details: messageError.message,
+        code: messageError.code
+      }, { status: 500 })
+    }
+
+    if (!messageData) {
+      console.error('[MESSAGES POST] Message creation returned no data')
+      return NextResponse.json({ error: 'Failed to create message: no data returned' }, { status: 500 })
     }
 
     // Update room activity score

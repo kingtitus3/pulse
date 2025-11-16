@@ -9,7 +9,6 @@ import ChattersList from '@/components/ChattersList'
 import ProfilePopup from '@/components/ProfilePopup'
 import JoinRoomDialog from '@/components/JoinRoomDialog'
 import ErrorBoundary from '@/components/ErrorBoundary'
-import { supabase } from '@/lib/supabaseClient'
 
 interface Room {
   id: string
@@ -50,9 +49,9 @@ export default function AppPage() {
   // Refs for stability - prevent race conditions
   const roomsLoadedRef = useRef(false)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const realtimeChannelRef = useRef<any>(null)
   const isMountedRef = useRef(true)
   const messageIdsRef = useRef<Set<string>>(new Set())
+  const lastMessageIdRef = useRef<string | null>(null)
 
   // Initialize
   useEffect(() => {
@@ -62,10 +61,6 @@ export default function AppPage() {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
         pollIntervalRef.current = null
-      }
-      if (realtimeChannelRef.current) {
-        supabase.removeChannel(realtimeChannelRef.current)
-        realtimeChannelRef.current = null
       }
     }
   }, [])
@@ -145,24 +140,22 @@ export default function AppPage() {
     }
   }, [searchParams, rooms, currentRoomSlug])
 
-  // Step 4: Load messages and set up Realtime subscription
+  // Step 4: Load messages with aggressive polling (1 second for near-instant feel)
   useEffect(() => {
-    if (!currentRoomSlug || !currentRoom) {
+    if (!currentRoomSlug) {
       setMessages([])
       messageIdsRef.current.clear()
+      lastMessageIdRef.current = null
       return
     }
 
-    // Clean up previous subscription and polling
-    if (realtimeChannelRef.current) {
-      supabase.removeChannel(realtimeChannelRef.current)
-      realtimeChannelRef.current = null
-    }
+    // Clear any existing polling
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current)
       pollIntervalRef.current = null
     }
     messageIdsRef.current.clear()
+    lastMessageIdRef.current = null
 
     let cancelled = false
 
@@ -170,7 +163,12 @@ export default function AppPage() {
       if (cancelled || !isMountedRef.current) return
 
       try {
-        const res = await fetch(`/api/rooms/${currentRoomSlug}/messages?limit=50`, {
+        // Only fetch new messages if we have a last message ID
+        const url = lastMessageIdRef.current
+          ? `/api/rooms/${currentRoomSlug}/messages?limit=50&after=${lastMessageIdRef.current}`
+          : `/api/rooms/${currentRoomSlug}/messages?limit=50`
+
+        const res = await fetch(url, {
           cache: 'no-store',
           headers: { 'Cache-Control': 'no-cache' }
         })
@@ -186,7 +184,7 @@ export default function AppPage() {
         if (cancelled || !isMountedRef.current) return
 
         if (Array.isArray(data)) {
-          // Filter out invalid messages and track IDs
+          // Filter out invalid messages
           const validMessages = data.filter(
             (msg: Message) => 
               msg && 
@@ -195,13 +193,43 @@ export default function AppPage() {
               msg.user.displayName &&
               msg.roomId
           )
-          
-          // Track message IDs to prevent duplicates
-          const newIds = new Set(validMessages.map(m => m.id))
-          messageIdsRef.current = newIds
-          
-          if (!cancelled && isMountedRef.current) {
-            setMessages(validMessages)
+
+          if (validMessages.length > 0) {
+            // Track message IDs to prevent duplicates
+            const newIds = new Set(messageIdsRef.current)
+            const newMessages: Message[] = []
+
+            validMessages.forEach((msg: Message) => {
+              if (!newIds.has(msg.id)) {
+                newIds.add(msg.id)
+                newMessages.push(msg)
+              }
+            })
+
+            // Update last message ID for next poll
+            const latestMessage = validMessages[validMessages.length - 1]
+            if (latestMessage && latestMessage.id) {
+              lastMessageIdRef.current = latestMessage.id
+            }
+
+            messageIdsRef.current = newIds
+
+            if (!cancelled && isMountedRef.current && newMessages.length > 0) {
+              setMessages((prev) => {
+                // Merge with existing messages, avoiding duplicates
+                const existingIds = new Set(prev.map(m => m.id))
+                const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id))
+                return [...prev, ...uniqueNewMessages].sort((a, b) => 
+                  new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                )
+              })
+
+              // Auto-scroll to new message
+              setTimeout(() => {
+                const messagesEnd = document.getElementById('messages-end')
+                messagesEnd?.scrollIntoView({ behavior: 'smooth' })
+              }, 100)
+            }
           }
         }
       } catch (err) {
@@ -211,105 +239,57 @@ export default function AppPage() {
       }
     }
 
-    // Load initial messages
-    loadMessages()
+    // Load initial messages (full history)
+    const loadInitialMessages = async () => {
+      if (cancelled || !isMountedRef.current) return
 
-    // Set up Realtime subscription for instant updates
-    try {
-      console.log('[REALTIME] Setting up subscription for room:', currentRoom.id)
-      const channel = supabase
-        .channel(`room-${currentRoom.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'Message',
-            filter: `roomId=eq.${currentRoom.id}`,
-          },
-          async (payload: any) => {
-            if (cancelled || !isMountedRef.current) return
-
-            const newMessageId = payload.new?.id
-            if (!newMessageId) return
-
-            // Prevent duplicate messages
-            if (messageIdsRef.current.has(newMessageId)) {
-              console.log('[REALTIME] Duplicate message ignored:', newMessageId)
-              return
-            }
-
-            console.log('[REALTIME] New message received:', newMessageId)
-
-            // Fetch the full message with user data
-            try {
-              const msgRes = await fetch(
-                `/api/rooms/${currentRoomSlug}/messages?limit=1&after=${newMessageId}`,
-                { cache: 'no-store' }
-              )
-
-              if (msgRes.ok) {
-                const msgData = await msgRes.json()
-                if (Array.isArray(msgData) && msgData.length > 0) {
-                  const newMsg = msgData[0]
-                  
-                  // Double-check for duplicates
-                  if (!messageIdsRef.current.has(newMsg.id)) {
-                    messageIdsRef.current.add(newMsg.id)
-                    
-                    if (!cancelled && isMountedRef.current) {
-                      setMessages((prev) => {
-                        // Final duplicate check
-                        if (prev.some((m) => m.id === newMsg.id)) {
-                          return prev
-                        }
-                        return [...prev, newMsg]
-                      })
-                      
-                      // Auto-scroll to new message
-                      setTimeout(() => {
-                        const messagesEnd = document.getElementById('messages-end')
-                        messagesEnd?.scrollIntoView({ behavior: 'smooth' })
-                      }, 100)
-                    }
-                  }
-                }
-              }
-            } catch (err) {
-              console.error('[REALTIME] Error fetching new message:', err)
-            }
-          }
-        )
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            console.log('[REALTIME] ✅ Subscribed to room:', currentRoomSlug)
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error('[REALTIME] ❌ Channel error, falling back to polling')
-            // Fallback to polling if Realtime fails
-            if (!pollIntervalRef.current) {
-              pollIntervalRef.current = setInterval(loadMessages, 3000)
-            }
-          } else {
-            console.log('[REALTIME] Status:', status)
-          }
+      try {
+        const res = await fetch(`/api/rooms/${currentRoomSlug}/messages?limit=50`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
         })
 
-      realtimeChannelRef.current = channel
-    } catch (realtimeError: any) {
-      console.error('[REALTIME] Failed to set up subscription:', realtimeError)
-      // Fallback to polling if Realtime setup fails
-      if (!pollIntervalRef.current) {
-        pollIntervalRef.current = setInterval(loadMessages, 3000)
+        if (cancelled || !isMountedRef.current) return
+
+        if (res.ok) {
+          const data = await res.json()
+          if (Array.isArray(data) && data.length > 0) {
+            const validMessages = data.filter(
+              (msg: Message) => 
+                msg && 
+                msg.id && 
+                msg.user && 
+                msg.user.displayName &&
+                msg.roomId
+            )
+
+            const newIds = new Set(validMessages.map(m => m.id))
+            messageIdsRef.current = newIds
+
+            // Set last message ID for incremental polling
+            const latestMessage = validMessages[validMessages.length - 1]
+            if (latestMessage && latestMessage.id) {
+              lastMessageIdRef.current = latestMessage.id
+            }
+
+            if (!cancelled && isMountedRef.current) {
+              setMessages(validMessages)
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[MESSAGES] Initial load error:', err)
       }
     }
 
-    // Fallback polling (every 10 seconds) as backup
-    // This ensures messages appear even if Realtime fails
+    loadInitialMessages()
+
+    // Poll every 1 second for new messages (aggressive polling for near-instant feel)
     pollIntervalRef.current = setInterval(() => {
       if (!cancelled && isMountedRef.current) {
         loadMessages()
       }
-    }, 10000)
+    }, 1000)
 
     return () => {
       cancelled = true
@@ -317,13 +297,10 @@ export default function AppPage() {
         clearInterval(pollIntervalRef.current)
         pollIntervalRef.current = null
       }
-      if (realtimeChannelRef.current) {
-        supabase.removeChannel(realtimeChannelRef.current)
-        realtimeChannelRef.current = null
-      }
       messageIdsRef.current.clear()
+      lastMessageIdRef.current = null
     }
-  }, [currentRoomSlug, currentRoom])
+  }, [currentRoomSlug])
 
   // Step 5: Handle room joining
   const handleJoinRoom = useCallback((slug: string) => {

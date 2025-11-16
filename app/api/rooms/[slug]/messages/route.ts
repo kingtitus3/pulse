@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { getSupabaseAdmin } from '@/lib/supabaseClient'
-import { prisma } from '@/lib/prisma'
 
 export async function GET(
   req: NextRequest,
@@ -16,147 +15,81 @@ export async function GET(
 
     console.log('[MESSAGES API] Fetching messages for room:', slug, { limit, before, after })
 
-    let room: any = null
-    let messages: any[] = []
+    const supabase = getSupabaseAdmin()
 
-    // Try Prisma first
-    try {
-      room = await prisma.room.findUnique({
-        where: { slug },
-      })
-      console.log('[MESSAGES API] Prisma found room:', room?.id)
-    } catch (prismaError: any) {
-      console.warn('[MESSAGES API] Prisma failed, using Supabase:', prismaError.message)
+    // Get room
+    const { data: roomData, error: roomError } = await supabase
+      .from('Room')
+      .select('*')
+      .eq('slug', slug)
+      .single()
+
+    if (roomError || !roomData) {
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
-    // If Prisma failed or room not found, try Supabase
-    if (!room) {
-      try {
-        const supabase = getSupabaseAdmin()
-        const { data: roomData, error: roomError } = await supabase
-          .from('Room')
-          .select('*')
-          .eq('slug', slug)
-          .single()
+    const room = roomData
+    console.log('[MESSAGES API] Found room:', room.id)
 
-        if (roomError || !roomData) {
-          return NextResponse.json({ error: 'Room not found' }, { status: 404 })
-        }
-        room = roomData
-        console.log('[MESSAGES API] Supabase found room:', room.id)
-      } catch (supabaseError: any) {
-        console.error('[MESSAGES API] Supabase room lookup failed:', supabaseError.message)
-        return NextResponse.json({ error: 'Room not found' }, { status: 404 })
-      }
+    // Get messages
+    let query = supabase
+      .from('Message')
+      .select(`
+        *,
+        user:User!Message_userId_fkey (
+          id,
+          displayName,
+          avatar
+        )
+      `)
+      .eq('roomId', room.id)
+      .is('deletedAt', null)
+
+    // Pagination support
+    if (before) {
+      query = query.lt('id', before).order('createdAt', { ascending: false })
+    } else if (after) {
+      query = query.gt('id', after).order('createdAt', { ascending: true })
+    } else {
+      query = query.order('createdAt', { ascending: false })
     }
 
-    // Get messages - try Prisma first
-    try {
-      const whereClause: any = {
-        roomId: room.id,
-        deletedAt: null,
-      }
-      
-      // Pagination support - use cursor-based pagination with ID
-      if (before) {
-        whereClause.id = { lt: before }
-      } else if (after) {
-        whereClause.id = { gt: after }
-      }
+    const { data: messagesData, error: messagesError } = await query.limit(limit)
 
-      messages = await prisma.message.findMany({
-        where: whereClause,
-        include: {
-          user: {
-            select: {
-              id: true,
-              displayName: true,
-              avatar: true,
-            },
-          },
-        },
-        orderBy: before
-          ? { createdAt: 'desc' } // For loading older messages
-          : after
-          ? { createdAt: 'asc' } // For fetching specific message
-          : { createdAt: 'desc' }, // Default: newest first
-        take: limit,
-      })
-      
-      // If loading older messages, reverse to maintain chronological order
-      if (before) {
-        messages.reverse()
-      }
-      
-      console.log('[MESSAGES API] Prisma found', messages.length, 'messages')
-    } catch (prismaError: any) {
-      console.warn('[MESSAGES API] Prisma messages failed, using Supabase:', prismaError.message)
-      
-      // Fallback to Supabase
-      try {
-        const supabase = getSupabaseAdmin()
-        let query = supabase
-          .from('Message')
-          .select(`
-            *,
-            user:User!Message_userId_fkey (
-              id,
-              displayName,
-              avatar
-            )
-          `)
-          .eq('roomId', room.id)
-          .is('deletedAt', null)
-        
-        // Pagination support
-        if (before) {
-          query = query.lt('id', before).order('createdAt', { ascending: false })
-        } else if (after) {
-          query = query.gt('id', after).order('createdAt', { ascending: true })
-        } else {
-          query = query.order('createdAt', { ascending: false })
-        }
-        
-        const { data: messagesData, error: messagesError } = await query.limit(limit)
-
-        if (messagesError) {
-          throw messagesError
-        }
-
-        // Transform Supabase response to match Prisma format
-        messages = (messagesData || []).map((msg: any) => ({
-          id: msg.id,
-          roomId: msg.roomId,
-          userId: msg.userId,
-          type: msg.type,
-          content: msg.content,
-          mediaUrl: msg.mediaUrl,
-          width: msg.width,
-          height: msg.height,
-          createdAt: msg.createdAt,
-          updatedAt: msg.updatedAt,
-          deletedAt: msg.deletedAt,
-          user: msg.user || {
-            id: msg.userId,
-            displayName: 'Unknown',
-            avatar: null,
-          },
-        }))
-        
-        // If loading older messages, reverse to maintain chronological order
-        if (before) {
-          messages.reverse()
-        }
-        
-        console.log('[MESSAGES API] Supabase found', messages.length, 'messages')
-      } catch (supabaseError: any) {
-        console.error('[MESSAGES API] Supabase messages failed:', supabaseError.message)
-        messages = []
-      }
+    if (messagesError) {
+      console.error('[MESSAGES API] Supabase query error:', messagesError)
+      return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
     }
 
-    // Reverse to show oldest first
-    messages.reverse()
+    // Transform Supabase response to match expected format
+    const messages = (messagesData || []).map((msg: any) => ({
+      id: msg.id,
+      roomId: msg.roomId,
+      userId: msg.userId,
+      type: msg.type,
+      content: msg.content,
+      mediaUrl: msg.mediaUrl,
+      width: msg.width,
+      height: msg.height,
+      createdAt: msg.createdAt,
+      updatedAt: msg.updatedAt,
+      deletedAt: msg.deletedAt,
+      user: msg.user || {
+        id: msg.userId,
+        displayName: 'Unknown',
+        avatar: null,
+      },
+    }))
+
+    // If loading older messages, reverse to maintain chronological order
+    if (before) {
+      messages.reverse()
+    }
+
+    // Reverse to show oldest first (only if not using 'after' for specific message fetch)
+    if (!after) {
+      messages.reverse()
+    }
 
     console.log('[MESSAGES API] Returning', messages.length, 'messages')
     return NextResponse.json(messages)
@@ -224,31 +157,32 @@ export async function POST(
       )
     }
 
-    // Get room
-    const room = await prisma.room.findUnique({
-      where: { slug },
-    })
+    const supabase = getSupabaseAdmin()
 
-    if (!room) {
+    // Get room
+    const { data: roomData, error: roomError } = await supabase
+      .from('Room')
+      .select('*')
+      .eq('slug', slug)
+      .single()
+
+    if (roomError || !roomData) {
       return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
-    // Check ban
-    const ban = await prisma.ban.findUnique({
-      where: {
-        roomId_userId: {
-          roomId: room.id,
-          userId: sessionData.user.id,
-        },
-      },
-    })
+    const room = roomData
 
-    if (ban) {
+    // Check ban
+    const { data: banData } = await supabase
+      .from('Ban')
+      .select('*')
+      .eq('roomId', room.id)
+      .eq('userId', sessionData.user.id)
+      .single()
+
+    if (banData) {
       return NextResponse.json({ error: 'You are banned from this room' }, { status: 403 })
     }
-
-    // Check slow mode (TODO: implement per-user tracking)
-    // For now, rate limiting handles this
 
     // Validate message
     if (type === 'text') {
@@ -259,14 +193,14 @@ export async function POST(
       if (!mediaUrl || typeof mediaUrl !== 'string') {
         return NextResponse.json({ error: 'Media URL is required' }, { status: 400 })
       }
-      // TODO: Validate mediaUrl is from allowed domains
     } else {
       return NextResponse.json({ error: 'Invalid message type' }, { status: 400 })
     }
 
     // Create message
-    const message = await prisma.message.create({
-      data: {
+    const { data: messageData, error: messageError } = await supabase
+      .from('Message')
+      .insert({
         roomId: room.id,
         userId: sessionData.user.id,
         type,
@@ -274,27 +208,47 @@ export async function POST(
         mediaUrl: type !== 'text' ? mediaUrl : null,
         width: width || null,
         height: height || null,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            displayName: true,
-            avatar: true,
-          },
-        },
-      },
-    })
+      })
+      .select(`
+        *,
+        user:User!Message_userId_fkey (
+          id,
+          displayName,
+          avatar
+        )
+      `)
+      .single()
+
+    if (messageError || !messageData) {
+      console.error('[MESSAGES POST] Failed to create message:', messageError)
+      return NextResponse.json({ error: 'Failed to create message' }, { status: 500 })
+    }
 
     // Update room activity score
-    await prisma.room.update({
-      where: { id: room.id },
-      data: {
-        activityScore: {
-          increment: 1,
-        },
+    await supabase
+      .from('Room')
+      .update({ activityScore: room.activityScore + 1 })
+      .eq('id', room.id)
+
+    // Transform to match expected format
+    const message = {
+      id: messageData.id,
+      roomId: messageData.roomId,
+      userId: messageData.userId,
+      type: messageData.type,
+      content: messageData.content,
+      mediaUrl: messageData.mediaUrl,
+      width: messageData.width,
+      height: messageData.height,
+      createdAt: messageData.createdAt,
+      updatedAt: messageData.updatedAt,
+      deletedAt: messageData.deletedAt,
+      user: messageData.user || {
+        id: messageData.userId,
+        displayName: 'Unknown',
+        avatar: null,
       },
-    })
+    }
 
     return NextResponse.json(message)
   } catch (error) {
@@ -302,4 +256,3 @@ export async function POST(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-

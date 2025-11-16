@@ -1,10 +1,8 @@
 import { NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
-import { PrismaClient } from '@prisma/client'
 import { createId } from '@paralleldrive/cuid2'
 import { getSupabaseAdmin } from './supabaseClient'
-
-const prisma = new PrismaClient()
+import { prisma } from './prisma'
 
 export interface SessionData {
   session: {

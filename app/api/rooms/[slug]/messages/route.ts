@@ -196,8 +196,14 @@ export async function POST(
         })
         return response
       } catch (sessionError: any) {
-        console.error('[MESSAGES POST] Failed to create session:', sessionError)
-        return NextResponse.json({ error: 'Failed to create session' }, { status: 500 })
+        console.error('[MESSAGES POST] Failed to create session:', {
+          message: sessionError.message,
+          stack: sessionError.stack,
+        })
+        return NextResponse.json({ 
+          error: 'Failed to create session',
+          details: sessionError.message 
+        }, { status: 500 })
       }
     }
 

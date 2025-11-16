@@ -201,9 +201,15 @@ export async function createAnonymousSession(
 
   // Fallback to Supabase
   try {
+    console.log('[SESSION] Attempting Supabase fallback for session creation...')
     const supabase = getSupabaseAdmin()
     
+    if (!supabase) {
+      throw new Error('Supabase admin client not available')
+    }
+    
     // Create user
+    console.log('[SESSION] Creating user in Supabase...')
     const { data: userData, error: userError } = await supabase
       .from('User')
       .insert({
@@ -217,11 +223,24 @@ export async function createAnonymousSession(
       .select()
       .single()
 
-    if (userError || !userData) {
-      throw new Error(`Failed to create user: ${userError?.message || 'Unknown error'}`)
+    if (userError) {
+      console.error('[SESSION] User creation error:', {
+        message: userError.message,
+        code: userError.code,
+        details: userError.details,
+        hint: userError.hint,
+      })
+      throw new Error(`Failed to create user: ${userError.message} (code: ${userError.code})`)
     }
 
+    if (!userData) {
+      throw new Error('User creation returned no data')
+    }
+
+    console.log('[SESSION] User created successfully:', userData.id)
+
     // Create session
+    console.log('[SESSION] Creating session in Supabase...')
     const { data: sessionData, error: sessionError } = await supabase
       .from('Session')
       .insert({
@@ -231,9 +250,25 @@ export async function createAnonymousSession(
       .select()
       .single()
 
-    if (sessionError || !sessionData) {
-      throw new Error(`Failed to create session: ${sessionError?.message || 'Unknown error'}`)
+    if (sessionError) {
+      console.error('[SESSION] Session creation error:', {
+        message: sessionError.message,
+        code: sessionError.code,
+        details: sessionError.details,
+        hint: sessionError.hint,
+      })
+      // Try to clean up the user if session creation fails
+      await supabase.from('User').delete().eq('id', userData.id).catch(() => {})
+      throw new Error(`Failed to create session: ${sessionError.message} (code: ${sessionError.code})`)
     }
+
+    if (!sessionData) {
+      // Try to clean up the user if session creation fails
+      await supabase.from('User').delete().eq('id', userData.id).catch(() => {})
+      throw new Error('Session creation returned no data')
+    }
+
+    console.log('[SESSION] Session created successfully:', sessionData.id)
 
     return {
       session: {
@@ -256,7 +291,10 @@ export async function createAnonymousSession(
       },
     }
   } catch (supabaseError: any) {
-    console.error('[SESSION] Supabase creation failed:', supabaseError.message)
+    console.error('[SESSION] Supabase creation failed:', {
+      message: supabaseError.message,
+      stack: supabaseError.stack,
+    })
     throw new Error(`Failed to create session: ${supabaseError.message}`)
   }
 }

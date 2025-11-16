@@ -169,9 +169,11 @@ export async function createAnonymousSession(
     
     // Create user
     console.log('[SESSION] Creating user in Supabase...')
+    const userId = createId() // Generate CUID for user
     const { data: userData, error: userError } = await supabase
       .from('User')
       .insert({
+        id: userId,
         displayName,
         avatar,
         isAnonymous: true,
@@ -200,11 +202,15 @@ export async function createAnonymousSession(
 
     // Create session
     console.log('[SESSION] Creating session in Supabase...')
+    const sessionId = createId() // Generate CUID for session
+    const now = new Date().toISOString()
     const { data: sessionData, error: sessionError } = await supabase
       .from('Session')
       .insert({
+        id: sessionId,
         userId: userData.id,
         ipHash,
+        lastSeenAt: now, // Required field
       })
       .select()
       .single()

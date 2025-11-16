@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import ChatTools from '@/components/ChatTools'
 import ChatMessage from '@/components/ChatMessage'
@@ -36,8 +36,9 @@ export default function AppPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   
-  // Core state - minimal and simple
+  // Core state
   const [rooms, setRooms] = useState<Room[]>([])
+  const [currentRoomSlug, setCurrentRoomSlug] = useState<string | null>(null)
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
@@ -45,9 +46,22 @@ export default function AppPage() {
   const [showJoinDialog, setShowJoinDialog] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   
-  // Refs for stability
-  const loadingRef = useRef(false)
+  // Refs for stability - prevent race conditions
+  const roomsLoadedRef = useRef(false)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const isMountedRef = useRef(true)
+
+  // Initialize
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+    }
+  }, [])
 
   // Step 1: Ensure session exists (non-blocking)
   useEffect(() => {
@@ -56,9 +70,8 @@ export default function AppPage() {
 
   // Step 2: Load rooms once on mount
   useEffect(() => {
-    if (loadingRef.current) return
-    loadingRef.current = true
-
+    if (roomsLoadedRef.current) return
+    
     const loadRooms = async () => {
       try {
         setLoading(true)
@@ -76,14 +89,16 @@ export default function AppPage() {
         const data = await res.json()
         const roomsData = Array.isArray(data.rooms) ? data.rooms : []
 
+        if (!isMountedRef.current) return
+
         if (roomsData.length === 0) {
           setError('No rooms available. Please seed the database.')
           setLoading(false)
-          loadingRef.current = false
           return
         }
 
         setRooms(roomsData)
+        roomsLoadedRef.current = true
 
         // Set current room from URL or first room
         const roomParam = searchParams?.get('room')
@@ -92,6 +107,7 @@ export default function AppPage() {
           : roomsData[0]
 
         if (targetRoom) {
+          setCurrentRoomSlug(targetRoom.slug)
           setCurrentRoom(targetRoom)
           if (!roomParam) {
             router.replace(`/app?room=${targetRoom.slug}`, { scroll: false })
@@ -99,21 +115,32 @@ export default function AppPage() {
         }
 
         setLoading(false)
-        loadingRef.current = false
       } catch (err: any) {
+        if (!isMountedRef.current) return
         console.error('[ROOMS] Error:', err)
         setError(err.message || 'Failed to load rooms')
         setLoading(false)
-        loadingRef.current = false
       }
     }
 
     loadRooms()
   }, [searchParams, router])
 
-  // Step 3: Load messages when room changes (simple polling)
+  // Step 3: Update current room when URL changes
   useEffect(() => {
-    if (!currentRoom) {
+    const roomParam = searchParams?.get('room')
+    if (roomParam && roomParam !== currentRoomSlug) {
+      const room = rooms.find((r) => r.slug === roomParam)
+      if (room) {
+        setCurrentRoomSlug(roomParam)
+        setCurrentRoom(room)
+      }
+    }
+  }, [searchParams, rooms, currentRoomSlug])
+
+  // Step 4: Load messages when room slug changes (simple polling)
+  useEffect(() => {
+    if (!currentRoomSlug) {
       setMessages([])
       return
     }
@@ -124,12 +151,18 @@ export default function AppPage() {
       pollIntervalRef.current = null
     }
 
+    let cancelled = false
+
     const loadMessages = async () => {
+      if (cancelled || !isMountedRef.current) return
+
       try {
-        const res = await fetch(`/api/rooms/${currentRoom.slug}/messages?limit=50`, {
+        const res = await fetch(`/api/rooms/${currentRoomSlug}/messages?limit=50`, {
           cache: 'no-store',
           headers: { 'Cache-Control': 'no-cache' }
         })
+
+        if (cancelled || !isMountedRef.current) return
 
         if (!res.ok) {
           console.error('[MESSAGES] Failed:', res.status)
@@ -137,15 +170,27 @@ export default function AppPage() {
         }
 
         const data = await res.json()
+        if (cancelled || !isMountedRef.current) return
+
         if (Array.isArray(data)) {
           // Filter out invalid messages
           const validMessages = data.filter(
-            (msg: Message) => msg && msg.id && msg.user && msg.user.displayName
+            (msg: Message) => 
+              msg && 
+              msg.id && 
+              msg.user && 
+              msg.user.displayName &&
+              msg.roomId
           )
-          setMessages(validMessages)
+          
+          if (!cancelled && isMountedRef.current) {
+            setMessages(validMessages)
+          }
         }
       } catch (err) {
-        console.error('[MESSAGES] Error:', err)
+        if (!cancelled && isMountedRef.current) {
+          console.error('[MESSAGES] Error:', err)
+        }
       }
     }
 
@@ -153,25 +198,31 @@ export default function AppPage() {
     loadMessages()
 
     // Poll every 3 seconds for new messages
-    pollIntervalRef.current = setInterval(loadMessages, 3000)
+    pollIntervalRef.current = setInterval(() => {
+      if (!cancelled && isMountedRef.current) {
+        loadMessages()
+      }
+    }, 3000)
 
     return () => {
+      cancelled = true
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
         pollIntervalRef.current = null
       }
     }
-  }, [currentRoom])
+  }, [currentRoomSlug])
 
-  // Step 4: Handle room joining
-  const handleJoinRoom = (slug: string) => {
+  // Step 5: Handle room joining
+  const handleJoinRoom = useCallback((slug: string) => {
     const room = rooms.find((r) => r.slug === slug)
     if (room) {
+      setCurrentRoomSlug(slug)
       setCurrentRoom(room)
       setShowJoinDialog(false)
       router.push(`/app?room=${slug}`, { scroll: false })
     }
-  }
+  }, [rooms, router])
 
   // Render
   return (
@@ -211,8 +262,8 @@ export default function AppPage() {
           {/* Error */}
           {error && (
             <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-2 text-xs">
-            <strong>Error:</strong> {error}
-          </div>
+              <strong>Error:</strong> {error}
+            </div>
           )}
 
           {/* Messages */}
@@ -235,14 +286,17 @@ export default function AppPage() {
                 <div className="text-xs text-gray-400 mt-2">Room: {currentRoom.shortName}</div>
               </div>
             ) : (
-              messages.map((msg, idx) => (
-                <ChatMessage
-                  key={msg.id}
-                  message={msg as any}
-                  index={idx}
-                  onUserClick={(userId) => setSelectedUserId(userId)}
-                />
-              ))
+              messages.map((msg, idx) => {
+                if (!msg || !msg.id || !msg.user) return null
+                return (
+                  <ChatMessage
+                    key={msg.id}
+                    message={msg as any}
+                    index={idx}
+                    onUserClick={(userId) => setSelectedUserId(userId)}
+                  />
+                )
+              })
             )}
           </div>
 
@@ -257,7 +311,7 @@ export default function AppPage() {
         </div>
 
         {/* Right Panel */}
-        <ChattersList roomSlug={currentRoom?.slug || null} />
+        <ChattersList roomSlug={currentRoomSlug} />
 
         {/* Modals */}
         {selectedUserId && (

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '@/lib/session'
-import { PrismaClient } from '@prisma/client'
+import { getSupabaseAdmin } from '@/lib/supabaseClient'
 import { logger } from '@/lib/logger'
-
-const prisma = new PrismaClient()
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,11 +11,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get wallets for user
-    const wallets = await prisma.wallet.findMany({
-      where: { userId: sessionData.user.id },
-      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
-    })
+    // Get wallets for user (using Supabase)
+    const supabase = getSupabaseAdmin()
+    const { data: walletsData } = await supabase
+      .from('Wallet')
+      .select('*')
+      .eq('userId', sessionData.user.id)
+      .order('isPrimary', { ascending: false })
+      .order('createdAt', { ascending: true })
+
+    const wallets = walletsData || []
 
     return NextResponse.json({
       user: {
@@ -96,10 +99,20 @@ export async function PATCH(req: NextRequest) {
       updateData.showWallets = Boolean(showWallets)
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: sessionData.user.id },
-      data: updateData,
-    })
+    // Update user using Supabase
+    const supabase = getSupabaseAdmin()
+    const { data: updatedUserData, error: updateError } = await supabase
+      .from('User')
+      .update(updateData)
+      .eq('id', sessionData.user.id)
+      .select()
+      .single()
+
+    if (updateError || !updatedUserData) {
+      throw new Error(updateError?.message || 'Failed to update user')
+    }
+
+    const updatedUser = updatedUserData
 
     return NextResponse.json({
       user: {

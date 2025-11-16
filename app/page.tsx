@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import JoinRoomDialog from '@/components/JoinRoomDialog'
+import DisplayNameBox from '@/components/DisplayNameBox'
 
 export default function Home() {
   const router = useRouter()
@@ -77,6 +78,9 @@ export default function Home() {
               Welcome to Pulse Chat - Your anonymous-first chat experience
             </p>
           </div>
+
+          {/* Display Name Box */}
+          <DisplayNameBox />
 
           {/* Main Content Box */}
           <div className="bg-[#FFFFFF] border-2 border-t-[#808080] border-l-[#808080] border-r-[#FFFFFF] border-b-[#FFFFFF] p-3 sm:p-4 mb-3 sm:mb-4">

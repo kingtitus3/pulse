@@ -47,9 +47,8 @@ export default function AppPage() {
   const [error, setError] = useState<string | null>(null)
   const [showJoinDialog, setShowJoinDialog] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
-  const [hasMoreMessages, setHasMoreMessages] = useState(false)
   
-  // Refs for cleanup and optimization
+  // Refs
   const channelRef = useRef<any>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageIdsRef = useRef<Set<string>>(new Set())
@@ -105,7 +104,7 @@ export default function AppPage() {
     loadRooms()
   }, [searchParams, router])
 
-  // Load initial messages and set up Realtime subscription
+  // Load messages and set up Realtime subscription
   useEffect(() => {
     if (!currentRoom) {
       setMessages([])
@@ -114,7 +113,11 @@ export default function AppPage() {
 
     // Clean up previous subscription
     if (channelRef.current) {
-      supabase.removeChannel(channelRef.current)
+      try {
+        supabase.removeChannel(channelRef.current)
+      } catch (err) {
+        console.error('Error removing channel:', err)
+      }
       channelRef.current = null
     }
     messageIdsRef.current.clear()
@@ -123,7 +126,6 @@ export default function AppPage() {
 
     const loadMessages = async () => {
       try {
-        // Load initial batch of messages (most recent 50)
         const res = await fetch(`/api/rooms/${currentRoom.slug}/messages?limit=50`, {
           cache: 'no-store',
         })
@@ -133,7 +135,6 @@ export default function AppPage() {
         if (res.ok) {
           const data = await res.json()
           if (Array.isArray(data)) {
-            // Track message IDs to prevent duplicates
             const newMessageIds = new Set<string>()
             const uniqueMessages = data.filter((msg: Message) => {
               if (newMessageIds.has(msg.id)) return false
@@ -143,9 +144,8 @@ export default function AppPage() {
             
             messageIdsRef.current = newMessageIds
             setMessages(uniqueMessages)
-            setHasMoreMessages(data.length === 50)
             
-            // Scroll to bottom after load
+            // Scroll to bottom
             setTimeout(() => {
               messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
             }, 100)
@@ -161,114 +161,92 @@ export default function AppPage() {
 
     loadMessages()
 
-    // Set up Realtime subscription for new messages
-    const channel = supabase
-      .channel(`room-${currentRoom.id}`, {
-        config: {
-          broadcast: { self: false },
-          presence: { key: '' },
-        },
-      })
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'Message',
-          filter: `roomId=eq.${currentRoom.id}`,
-        },
-        async (payload: any) => {
-          if (cancelled) return
-          
-          const newMessageId = payload.new.id
-          
-          // Prevent duplicate messages
-          if (messageIdsRef.current.has(newMessageId)) {
-            return
-          }
-
-          // Fetch the full message with user data
-          try {
-            const msgRes = await fetch(
-              `/api/rooms/${currentRoom.slug}/messages?limit=1&after=${newMessageId}`
-            )
-            const msgData = await msgRes.json()
+    // Set up Realtime subscription (graceful failure)
+    try {
+      const channel = supabase
+        .channel(`room-${currentRoom.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'Message',
+            filter: `roomId=eq.${currentRoom.id}`,
+          },
+          async (payload: any) => {
+            if (cancelled) return
             
-            if (Array.isArray(msgData) && msgData.length > 0) {
-              const newMsg = msgData[0]
-              if (!messageIdsRef.current.has(newMsg.id)) {
-                messageIdsRef.current.add(newMsg.id)
-                setMessages((prev) => {
-                  // Prevent duplicates in state
-                  if (prev.some((m) => m.id === newMsg.id)) {
-                    return prev
-                  }
-                  return [...prev, newMsg]
-                })
-                
-                // Auto-scroll to new message
-                setTimeout(() => {
-                  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-                }, 100)
+            try {
+              const newMessageId = payload.new?.id
+              if (!newMessageId || messageIdsRef.current.has(newMessageId)) {
+                return
               }
-            }
-          } catch (err) {
-            console.error('Failed to fetch new message:', err)
-          }
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Realtime subscribed to room:', currentRoom.slug)
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Realtime channel error')
-        }
-      })
 
-    channelRef.current = channel
+              // Fetch the new message
+              const msgRes = await fetch(
+                `/api/rooms/${currentRoom.slug}/messages?limit=50`,
+                { cache: 'no-store' }
+              )
+              
+              if (msgRes.ok) {
+                const msgData = await msgRes.json()
+                if (Array.isArray(msgData) && msgData.length > 0) {
+                  // Get the newest message
+                  const newMsg = msgData[msgData.length - 1]
+                  if (!messageIdsRef.current.has(newMsg.id)) {
+                    messageIdsRef.current.add(newMsg.id)
+                    setMessages((prev) => {
+                      if (prev.some((m) => m.id === newMsg.id)) {
+                        return prev
+                      }
+                      return [...prev, newMsg]
+                    })
+                    
+                    setTimeout(() => {
+                      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+                    }, 100)
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('Error handling new message:', err)
+            }
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ Realtime subscribed')
+          } else if (status === 'CHANNEL_ERROR') {
+            console.warn('⚠️ Realtime error, falling back to polling')
+          }
+        })
+
+      channelRef.current = channel
+    } catch (err) {
+      console.error('Failed to set up Realtime:', err)
+    }
+
+    // Fallback: Poll every 5 seconds if Realtime fails
+    const pollInterval = setInterval(() => {
+      if (!cancelled) {
+        loadMessages()
+      }
+    }, 5000)
 
     return () => {
       cancelled = true
+      clearInterval(pollInterval)
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current)
+        try {
+          supabase.removeChannel(channelRef.current)
+        } catch (err) {
+          console.error('Error cleaning up channel:', err)
+        }
         channelRef.current = null
       }
       messageIdsRef.current.clear()
     }
   }, [currentRoom])
-
-  // Load older messages (pagination)
-  const loadOlderMessages = useCallback(async () => {
-    if (!currentRoom || messages.length === 0 || !hasMoreMessages) return
-
-    try {
-      const oldestMessageId = messages[0].id
-      const res = await fetch(
-        `/api/rooms/${currentRoom.slug}/messages?limit=50&before=${oldestMessageId}`,
-        { cache: 'no-store' }
-      )
-
-      if (res.ok) {
-        const data = await res.json()
-        if (Array.isArray(data) && data.length > 0) {
-          const newMessageIds = new Set(messageIdsRef.current)
-          const uniqueMessages = data.filter((msg: Message) => {
-            if (newMessageIds.has(msg.id)) return false
-            newMessageIds.add(msg.id)
-            return true
-          })
-          
-          messageIdsRef.current = newMessageIds
-          setMessages((prev) => [...uniqueMessages, ...prev])
-          setHasMoreMessages(data.length === 50)
-        } else {
-          setHasMoreMessages(false)
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load older messages:', err)
-    }
-  }, [currentRoom, messages, hasMoreMessages])
 
   const handleJoinRoom = useCallback(
     (slug: string) => {
@@ -324,7 +302,7 @@ export default function AppPage() {
           )}
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto bg-white p-2" style={{ scrollBehavior: 'smooth' }}>
+          <div className="flex-1 overflow-y-auto bg-white p-2">
             {loading ? (
               <div className="text-center text-gray-500 text-sm py-8">Loading...</div>
             ) : !currentRoom ? (
@@ -344,16 +322,6 @@ export default function AppPage() {
               </div>
             ) : (
               <>
-                {hasMoreMessages && (
-                  <div className="text-center py-2">
-                    <button
-                      onClick={loadOlderMessages}
-                      className="text-xs text-blue-600 hover:underline"
-                    >
-                      Load older messages
-                    </button>
-                  </div>
-                )}
                 {messages
                   .filter((msg) => msg && msg.user)
                   .map((msg, idx) => (

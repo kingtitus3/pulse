@@ -24,7 +24,17 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const handleSend = async () => {
-    if (!content.trim() || !user) return
+    if (!content.trim()) return
+
+    // Ensure session exists
+    try {
+      await fetch('/api/session/ensure')
+    } catch (err) {
+      console.error('Failed to ensure session:', err)
+    }
+
+    const messageContent = content.trim()
+    setContent('') // Clear input immediately for better UX
 
     try {
       const res = await fetch(`/api/rooms/${roomSlug}/messages`, {
@@ -32,16 +42,26 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'text',
-          content,
+          content: messageContent,
         }),
       })
 
-      if (res.ok) {
-        setContent('')
-        inputRef.current?.focus()
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        console.error('Failed to send message:', res.status, errorData)
+        // Restore content on error
+        setContent(messageContent)
+        alert(`Failed to send message: ${errorData.error || res.statusText}`)
+        return
       }
+
+      inputRef.current?.focus()
+      // Message will appear via Realtime subscription
     } catch (error) {
       console.error('Failed to send message:', error)
+      // Restore content on error
+      setContent(messageContent)
+      alert('Failed to send message. Please try again.')
     }
   }
 

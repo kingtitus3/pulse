@@ -12,9 +12,11 @@ export async function GET(
   try {
     const slug = params.slug
     const { searchParams } = new URL(req.url)
-    const limit = parseInt(searchParams.get('limit') || '50', 10)
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100) // Max 100
+    const before = searchParams.get('before') // For pagination
+    const after = searchParams.get('after') // For fetching specific message
 
-    console.log('[MESSAGES API] Fetching messages for room:', slug)
+    console.log('[MESSAGES API] Fetching messages for room:', slug, { limit, before, after })
 
     let room: any = null
     let messages: any[] = []
@@ -78,7 +80,7 @@ export async function GET(
       // Fallback to Supabase
       try {
         const supabase = getSupabaseAdmin()
-        const { data: messagesData, error: messagesError } = await supabase
+        let query = supabase
           .from('Message')
           .select(`
             *,
@@ -90,8 +92,17 @@ export async function GET(
           `)
           .eq('roomId', room.id)
           .is('deletedAt', null)
-          .order('createdAt', { ascending: false })
-          .limit(limit)
+        
+        // Pagination support
+        if (before) {
+          query = query.lt('id', before).order('createdAt', { ascending: false })
+        } else if (after) {
+          query = query.gt('id', after).order('createdAt', { ascending: true })
+        } else {
+          query = query.order('createdAt', { ascending: false })
+        }
+        
+        const { data: messagesData, error: messagesError } = await query.limit(limit)
 
         if (messagesError) {
           throw messagesError
@@ -116,6 +127,12 @@ export async function GET(
             avatar: null,
           },
         }))
+        
+        // If loading older messages, reverse to maintain chronological order
+        if (before) {
+          messages.reverse()
+        }
+        
         console.log('[MESSAGES API] Supabase found', messages.length, 'messages')
       } catch (supabaseError: any) {
         console.error('[MESSAGES API] Supabase messages failed:', supabaseError.message)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import ChatTools from '@/components/ChatTools'
 import ChatMessage from '@/components/ChatMessage'
@@ -9,6 +9,7 @@ import ChattersList from '@/components/ChattersList'
 import ProfilePopup from '@/components/ProfilePopup'
 import JoinRoomDialog from '@/components/JoinRoomDialog'
 import ErrorBoundary from '@/components/ErrorBoundary'
+import { supabase } from '@/lib/supabaseClient'
 
 interface Room {
   id: string
@@ -38,7 +39,7 @@ export default function AppPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   
-  // Simple state
+  // State
   const [rooms, setRooms] = useState<Room[]>([])
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -46,8 +47,19 @@ export default function AppPage() {
   const [error, setError] = useState<string | null>(null)
   const [showJoinDialog, setShowJoinDialog] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [hasMoreMessages, setHasMoreMessages] = useState(false)
+  
+  // Refs for cleanup and optimization
+  const channelRef = useRef<any>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messageIdsRef = useRef<Set<string>>(new Set())
 
-  // Load rooms
+  // Ensure user session exists
+  useEffect(() => {
+    fetch('/api/session/ensure').catch(console.error)
+  }, [])
+
+  // Load rooms once
   useEffect(() => {
     const loadRooms = async () => {
       try {
@@ -93,65 +105,182 @@ export default function AppPage() {
     loadRooms()
   }, [searchParams, router])
 
-  // Load user session
+  // Load initial messages and set up Realtime subscription
   useEffect(() => {
-    const loadUser = async () => {
-      try {
-        await fetch('/api/session/ensure')
-      } catch (err) {
-        console.error('Failed to ensure session:', err)
-      }
+    if (!currentRoom) {
+      setMessages([])
+      return
     }
-    loadUser()
-  }, [])
 
-  // Load messages when room changes
-  useEffect(() => {
-    if (!currentRoom) return
+    // Clean up previous subscription
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current)
+      channelRef.current = null
+    }
+    messageIdsRef.current.clear()
+
+    let cancelled = false
 
     const loadMessages = async () => {
       try {
+        // Load initial batch of messages (most recent 50)
         const res = await fetch(`/api/rooms/${currentRoom.slug}/messages?limit=50`, {
           cache: 'no-store',
         })
 
+        if (cancelled) return
+
         if (res.ok) {
           const data = await res.json()
           if (Array.isArray(data)) {
-            setMessages(data)
+            // Track message IDs to prevent duplicates
+            const newMessageIds = new Set<string>()
+            const uniqueMessages = data.filter((msg: Message) => {
+              if (newMessageIds.has(msg.id)) return false
+              newMessageIds.add(msg.id)
+              return true
+            })
+            
+            messageIdsRef.current = newMessageIds
+            setMessages(uniqueMessages)
+            setHasMoreMessages(data.length === 50)
+            
+            // Scroll to bottom after load
+            setTimeout(() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+            }, 100)
           }
         }
       } catch (err) {
-        console.error('Failed to load messages:', err)
-        setMessages([])
+        if (!cancelled) {
+          console.error('Failed to load messages:', err)
+          setMessages([])
+        }
       }
     }
 
     loadMessages()
 
-    // Listen for new messages
-    const handleMessageSent = () => {
-      setTimeout(loadMessages, 500) // Reload after a short delay
-    }
-    window.addEventListener('message-sent', handleMessageSent)
+    // Set up Realtime subscription for new messages
+    const channel = supabase
+      .channel(`room-${currentRoom.id}`, {
+        config: {
+          broadcast: { self: false },
+          presence: { key: '' },
+        },
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'Message',
+          filter: `roomId=eq.${currentRoom.id}`,
+        },
+        async (payload: any) => {
+          if (cancelled) return
+          
+          const newMessageId = payload.new.id
+          
+          // Prevent duplicate messages
+          if (messageIdsRef.current.has(newMessageId)) {
+            return
+          }
 
-    // Poll for new messages every 3 seconds
-    const interval = setInterval(loadMessages, 3000)
+          // Fetch the full message with user data
+          try {
+            const msgRes = await fetch(
+              `/api/rooms/${currentRoom.slug}/messages?limit=1&after=${newMessageId}`
+            )
+            const msgData = await msgRes.json()
+            
+            if (Array.isArray(msgData) && msgData.length > 0) {
+              const newMsg = msgData[0]
+              if (!messageIdsRef.current.has(newMsg.id)) {
+                messageIdsRef.current.add(newMsg.id)
+                setMessages((prev) => {
+                  // Prevent duplicates in state
+                  if (prev.some((m) => m.id === newMsg.id)) {
+                    return prev
+                  }
+                  return [...prev, newMsg]
+                })
+                
+                // Auto-scroll to new message
+                setTimeout(() => {
+                  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+                }, 100)
+              }
+            }
+          } catch (err) {
+            console.error('Failed to fetch new message:', err)
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Realtime subscribed to room:', currentRoom.slug)
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Realtime channel error')
+        }
+      })
+
+    channelRef.current = channel
 
     return () => {
-      clearInterval(interval)
-      window.removeEventListener('message-sent', handleMessageSent)
+      cancelled = true
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current)
+        channelRef.current = null
+      }
+      messageIdsRef.current.clear()
     }
   }, [currentRoom])
 
-  const handleJoinRoom = (slug: string) => {
-    const room = rooms.find((r) => r.slug === slug)
-    if (room) {
-      setCurrentRoom(room)
-      setShowJoinDialog(false)
-      router.push(`/app?room=${slug}`, { scroll: false })
+  // Load older messages (pagination)
+  const loadOlderMessages = useCallback(async () => {
+    if (!currentRoom || messages.length === 0 || !hasMoreMessages) return
+
+    try {
+      const oldestMessageId = messages[0].id
+      const res = await fetch(
+        `/api/rooms/${currentRoom.slug}/messages?limit=50&before=${oldestMessageId}`,
+        { cache: 'no-store' }
+      )
+
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data) && data.length > 0) {
+          const newMessageIds = new Set(messageIdsRef.current)
+          const uniqueMessages = data.filter((msg: Message) => {
+            if (newMessageIds.has(msg.id)) return false
+            newMessageIds.add(msg.id)
+            return true
+          })
+          
+          messageIdsRef.current = newMessageIds
+          setMessages((prev) => [...uniqueMessages, ...prev])
+          setHasMoreMessages(data.length === 50)
+        } else {
+          setHasMoreMessages(false)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load older messages:', err)
     }
-  }
+  }, [currentRoom, messages, hasMoreMessages])
+
+  const handleJoinRoom = useCallback(
+    (slug: string) => {
+      const room = rooms.find((r) => r.slug === slug)
+      if (room) {
+        setCurrentRoom(room)
+        setShowJoinDialog(false)
+        router.push(`/app?room=${slug}`, { scroll: false })
+      }
+    },
+    [rooms, router]
+  )
 
   return (
     <ErrorBoundary>
@@ -195,7 +324,7 @@ export default function AppPage() {
           )}
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto bg-white p-2">
+          <div className="flex-1 overflow-y-auto bg-white p-2" style={{ scrollBehavior: 'smooth' }}>
             {loading ? (
               <div className="text-center text-gray-500 text-sm py-8">Loading...</div>
             ) : !currentRoom ? (
@@ -214,16 +343,29 @@ export default function AppPage() {
                 <div className="text-xs text-gray-400 mt-2">Room: {currentRoom.shortName}</div>
               </div>
             ) : (
-              messages
-                .filter((msg) => msg && msg.user)
-                .map((msg, idx) => (
-                  <ChatMessage
-                    key={msg.id || `msg-${idx}`}
-                    message={msg as any}
-                    index={idx}
-                    onUserClick={(userId) => setSelectedUserId(userId)}
-                  />
-                ))
+              <>
+                {hasMoreMessages && (
+                  <div className="text-center py-2">
+                    <button
+                      onClick={loadOlderMessages}
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      Load older messages
+                    </button>
+                  </div>
+                )}
+                {messages
+                  .filter((msg) => msg && msg.user)
+                  .map((msg, idx) => (
+                    <ChatMessage
+                      key={msg.id}
+                      message={msg as any}
+                      index={idx}
+                      onUserClick={(userId) => setSelectedUserId(userId)}
+                    />
+                  ))}
+                <div ref={messagesEndRef} />
+              </>
             )}
           </div>
 

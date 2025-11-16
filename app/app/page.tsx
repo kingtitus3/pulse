@@ -208,7 +208,14 @@ export default function AppPage() {
             messageIdsRef.current = newIds
 
             if (!cancelled && isMountedRef.current) {
+              console.log('[MESSAGES] Setting', validMessages.length, 'messages in state')
               setMessages(validMessages)
+              
+              // Auto-scroll to bottom after loading
+              setTimeout(() => {
+                const messagesEnd = document.getElementById('messages-end')
+                messagesEnd?.scrollIntoView({ behavior: 'smooth' })
+              }, 100)
             }
           }
         }

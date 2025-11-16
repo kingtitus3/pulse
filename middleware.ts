@@ -37,7 +37,7 @@ export async function middleware(request: NextRequest) {
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.vercel-insights.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https: blob:",
-      "connect-src 'self' https://*.supabase.co https://api.tenor.com https://media.tenor.com wss://*.supabase.co",
+      "connect-src 'self' https://*.supabase.co https://api.tenor.com https://media.tenor.com wss://*.supabase.co https://*.pusher.com wss://*.pusher.com ws://*.pusher.com",
       "media-src 'self' https: blob:",
       "font-src 'self' data: blob: https:",
       "worker-src 'self' blob:",

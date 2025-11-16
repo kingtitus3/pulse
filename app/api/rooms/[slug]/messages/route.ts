@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/logger'
 import { getSupabaseAdmin } from '@/lib/supabaseClient'
+import { pusherServer } from '@/lib/pusher'
 
 export async function GET(
   req: NextRequest,

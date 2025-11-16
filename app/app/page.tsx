@@ -9,7 +9,7 @@ import ChattersList from '@/components/ChattersList'
 import ProfilePopup from '@/components/ProfilePopup'
 import JoinRoomDialog from '@/components/JoinRoomDialog'
 import ErrorBoundary from '@/components/ErrorBoundary'
-import { supabase } from '@/lib/supabaseClient'
+import Pusher from 'pusher-js'
 
 interface Room {
   id: string
@@ -49,18 +49,32 @@ export default function AppPage() {
   
   // Refs for stability
   const roomsLoadedRef = useRef(false)
-  const realtimeChannelRef = useRef<any>(null)
+  const pusherChannelRef = useRef<any>(null)
+  const pusherClientRef = useRef<Pusher | null>(null)
   const isMountedRef = useRef(true)
   const messageIdsRef = useRef<Set<string>>(new Set())
 
   // Initialize
   useEffect(() => {
     isMountedRef.current = true
+    
+    // Initialize Pusher client
+    if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_PUSHER_KEY) {
+      pusherClientRef.current = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY, {
+        cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER || 'us2',
+      })
+    }
+    
     return () => {
       isMountedRef.current = false
-      if (realtimeChannelRef.current) {
-        supabase.removeChannel(realtimeChannelRef.current)
-        realtimeChannelRef.current = null
+      if (pusherChannelRef.current) {
+        pusherChannelRef.current.unbind_all()
+        pusherChannelRef.current.unsubscribe()
+        pusherChannelRef.current = null
+      }
+      if (pusherClientRef.current) {
+        pusherClientRef.current.disconnect()
+        pusherClientRef.current = null
       }
     }
   }, [])
@@ -140,7 +154,7 @@ export default function AppPage() {
     }
   }, [searchParams, rooms, currentRoomSlug])
 
-  // Step 4: Load messages and set up Supabase Realtime
+  // Step 4: Load messages and set up Pusher for instant updates
   useEffect(() => {
     if (!currentRoomSlug || !currentRoom) {
       setMessages([])
@@ -149,9 +163,10 @@ export default function AppPage() {
     }
 
     // Clean up previous subscription
-    if (realtimeChannelRef.current) {
-      supabase.removeChannel(realtimeChannelRef.current)
-      realtimeChannelRef.current = null
+    if (pusherChannelRef.current) {
+      pusherChannelRef.current.unbind_all()
+      pusherChannelRef.current.unsubscribe()
+      pusherChannelRef.current = null
     }
     messageIdsRef.current.clear()
 
@@ -196,103 +211,65 @@ export default function AppPage() {
 
     loadInitialMessages()
 
-    // Set up Supabase Realtime subscription
-    try {
-      console.log('[REALTIME] Setting up subscription for room:', currentRoom.id)
-      
-      const channel = supabase
-        .channel(`room:${currentRoom.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'Message',
-            filter: `roomId=eq.${currentRoom.id}`,
-          },
-          async (payload: any) => {
-            if (cancelled || !isMountedRef.current) return
+    // Set up Pusher subscription for instant updates
+    if (pusherClientRef.current) {
+      try {
+        console.log('[PUSHER] Subscribing to room:', currentRoom.id)
+        const channel = pusherClientRef.current.subscribe(`room-${currentRoom.id}`)
 
-            const newMessageId = payload.new?.id
-            if (!newMessageId) {
-              console.warn('[REALTIME] Received event without message ID')
-              return
-            }
+        channel.bind('new-message', (data: Message) => {
+          if (cancelled || !isMountedRef.current) return
 
-            // Prevent duplicate messages
-            if (messageIdsRef.current.has(newMessageId)) {
-              console.log('[REALTIME] Duplicate message ignored:', newMessageId)
-              return
-            }
-
-            console.log('[REALTIME] New message received:', newMessageId)
-
-            // Fetch the full message with user data
-            try {
-              const msgRes = await fetch(
-                `/api/rooms/${currentRoomSlug}/messages?limit=1&after=${newMessageId}`,
-                { cache: 'no-store' }
-              )
-
-              if (msgRes.ok) {
-                const msgData = await msgRes.json()
-                if (Array.isArray(msgData) && msgData.length > 0) {
-                  const newMsg = msgData[0]
-                  
-                  // Double-check for duplicates
-                  if (!messageIdsRef.current.has(newMsg.id)) {
-                    messageIdsRef.current.add(newMsg.id)
-                    
-                    if (!cancelled && isMountedRef.current) {
-                      setMessages((prev) => {
-                        // Final duplicate check
-                        if (prev.some((m) => m.id === newMsg.id)) {
-                          return prev
-                        }
-                        return [...prev, newMsg].sort((a, b) => 
-                          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-                        )
-                      })
-                      
-                      // Auto-scroll to new message
-                      setTimeout(() => {
-                        const messagesEnd = document.getElementById('messages-end')
-                        messagesEnd?.scrollIntoView({ behavior: 'smooth' })
-                      }, 100)
-                    }
-                  }
-                }
-              } else {
-                console.error('[REALTIME] Failed to fetch message:', msgRes.status)
-              }
-            } catch (err) {
-              console.error('[REALTIME] Error fetching new message:', err)
-            }
+          // Prevent duplicates
+          if (messageIdsRef.current.has(data.id)) {
+            console.log('[PUSHER] Duplicate message ignored:', data.id)
+            return
           }
-        )
-        .subscribe((status) => {
-          console.log('[REALTIME] Subscription status:', status)
-          if (status === 'SUBSCRIBED') {
-            console.log('[REALTIME] ✅ Successfully subscribed to room:', currentRoomSlug)
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error('[REALTIME] ❌ Channel error')
-          } else if (status === 'TIMED_OUT') {
-            console.error('[REALTIME] ⏱️ Connection timed out')
-          } else if (status === 'CLOSED') {
-            console.log('[REALTIME] 🔒 Channel closed')
+
+          console.log('[PUSHER] New message received:', data.id)
+          messageIdsRef.current.add(data.id)
+
+          if (!cancelled && isMountedRef.current) {
+            setMessages((prev) => {
+              // Final duplicate check
+              if (prev.some((m) => m.id === data.id)) {
+                return prev
+              }
+              return [...prev, data].sort((a, b) => 
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              )
+            })
+
+            // Auto-scroll to new message
+            setTimeout(() => {
+              const messagesEnd = document.getElementById('messages-end')
+              messagesEnd?.scrollIntoView({ behavior: 'smooth' })
+            }, 100)
           }
         })
 
-      realtimeChannelRef.current = channel
-    } catch (realtimeError: any) {
-      console.error('[REALTIME] Failed to set up subscription:', realtimeError)
+        channel.bind('pusher:subscription_succeeded', () => {
+          console.log('[PUSHER] ✅ Successfully subscribed to room:', currentRoomSlug)
+        })
+
+        channel.bind('pusher:subscription_error', (error: any) => {
+          console.error('[PUSHER] ❌ Subscription error:', error)
+        })
+
+        pusherChannelRef.current = channel
+      } catch (pusherError: any) {
+        console.error('[PUSHER] Failed to set up subscription:', pusherError)
+      }
+    } else {
+      console.warn('[PUSHER] Pusher client not initialized - check NEXT_PUBLIC_PUSHER_KEY')
     }
 
     return () => {
       cancelled = true
-      if (realtimeChannelRef.current) {
-        supabase.removeChannel(realtimeChannelRef.current)
-        realtimeChannelRef.current = null
+      if (pusherChannelRef.current) {
+        pusherChannelRef.current.unbind_all()
+        pusherChannelRef.current.unsubscribe()
+        pusherChannelRef.current = null
       }
       messageIdsRef.current.clear()
     }

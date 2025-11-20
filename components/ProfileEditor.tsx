@@ -15,7 +15,7 @@ const AVATAR_OPTIONS = [
 ]
 
 export default function ProfileEditor({ onClose }: ProfileEditorProps) {
-  const { user, setMe } = useMeStore()
+  const { user, wallets, setMe } = useMeStore()
   const [displayName, setDisplayName] = useState('')
   const [avatar, setAvatar] = useState('avatar-1')
   const [customAvatarUrl, setCustomAvatarUrl] = useState<string | null>(null)
@@ -76,7 +76,12 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
       }
 
       const data = await res.json()
-      setMe(data)
+      if (data.user) {
+        setMe({
+          user: data.user,
+          wallets,
+        })
+      }
       onClose()
     } catch (err: any) {
       setError(err.message || 'Failed to update profile')
@@ -298,6 +303,50 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
             <div className="text-[10px] text-gray-500 mt-1">
               {bio.length}/280 characters
             </div>
+          </div>
+
+          {/* Account & Wallets */}
+          <div className="mb-4">
+            <label className="block text-xs font-bold mb-1 text-gray-700">
+              Account &amp; Wallets
+            </label>
+            <div className="text-[10px] text-gray-600 mb-1">
+              {user.isAnonymous
+                ? 'Anonymous account (no wallet linked yet). Connect a Solana wallet on the home screen to make this account permanent.'
+                : 'Wallet-linked account.'}
+            </div>
+            {wallets && wallets.length > 0 ? (
+              <div className="space-y-1 text-[10px] text-gray-700">
+                {wallets.map((w) => (
+                  <div
+                    key={w.id}
+                    className="flex items-center justify-between border border-yahoo-border px-2 py-1 bg-yahoo-messageHover"
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-mono">
+                        {w.addressTruncated || w.address}
+                      </span>
+                      {w.label && (
+                        <span className="text-[9px] text-gray-600">
+                          Label: {w.label}
+                        </span>
+                      )}
+                    </div>
+                    <div className="ml-2 text-right">
+                      {w.isPrimary && (
+                        <span className="inline-block text-[9px] px-1 py-[1px] border border-gray-500 bg-gray-100">
+                          Primary
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[10px] text-gray-600">
+                No wallets linked yet.
+              </div>
+            )}
           </div>
 
           {/* Tags */}

@@ -44,8 +44,20 @@ export async function verifyWalletOwnership(
   signature: string,
   message: string
 ): Promise<boolean> {
-  // TODO: Implement signature verification
-  // For now, we trust the client (not recommended for production)
-  return true
+  try {
+    if (!isValidSolanaAddress(address)) {
+      return false
+    }
+
+    const publicKey = new PublicKey(address)
+
+    // Signature is expected to be base58-encoded
+    const signatureBytes = bs58.decode(signature)
+    const messageBytes = new TextEncoder().encode(message)
+
+    return publicKey.verify(messageBytes, signatureBytes)
+  } catch {
+    return false
+  }
 }
 

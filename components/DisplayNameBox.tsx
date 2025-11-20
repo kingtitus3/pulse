@@ -8,7 +8,7 @@ interface DisplayNameBoxProps {
 }
 
 export default function DisplayNameBox({ onNameChange }: DisplayNameBoxProps) {
-  const { user, setMe } = useMeStore()
+  const { user, wallets, setMe } = useMeStore()
   const [displayName, setDisplayName] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -19,19 +19,38 @@ export default function DisplayNameBox({ onNameChange }: DisplayNameBoxProps) {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const res = await fetch('/api/me', { cache: 'no-store' })
+        // First try to load existing user
+        let res = await fetch('/api/me', { cache: 'no-store' })
+
+        // If no session, ensure one exists and retry once
+        if (res.status === 401) {
+          const ensureRes = await fetch('/api/session/ensure', {
+            method: 'GET',
+            cache: 'no-store',
+          })
+
+          if (ensureRes.ok) {
+            res = await fetch('/api/me', { cache: 'no-store' })
+          }
+        }
+
         if (res.ok) {
           const data = await res.json()
           if (data.user) {
-            setMe(data.user)
+            setMe({
+              user: data.user,
+              wallets: data.wallets || wallets,
+            })
             setDisplayName(data.user.displayName || '')
+            return
           }
-        } else if (res.status === 401) {
-          // No session yet - will be created when they enter
-          setDisplayName('Guest')
         }
+
+        // Fallback if we still don't have a user
+        setDisplayName('Guest')
       } catch (err) {
         console.error('Failed to load user:', err)
+        setDisplayName('Guest')
       } finally {
         setLoading(false)
       }
@@ -81,7 +100,10 @@ export default function DisplayNameBox({ onNameChange }: DisplayNameBoxProps) {
       }
 
       const data = await res.json()
-      setMe(data.user)
+      setMe({
+        user: data.user,
+        wallets,
+      })
       setIsEditing(false)
       if (onNameChange) {
         onNameChange(data.user.displayName)

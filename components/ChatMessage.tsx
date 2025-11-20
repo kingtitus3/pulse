@@ -41,6 +41,7 @@ export default function ChatMessage({
     return new Date(date).toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
+      second: '2-digit',
       hour12: true,
     })
   }
@@ -88,6 +89,9 @@ export default function ChatMessage({
       } hover:message-row-hover`}
     >
       <div className="flex items-start">
+        <span className="text-[10px] text-gray-500 mr-1 mt-[2px]">
+          [{formatTime(message.createdAt)}]
+        </span>
         <span
           className={`font-bold cursor-pointer hover:underline mr-1 ${
             isSpecialUser ? 'text-red-600' : 'text-blue-600'

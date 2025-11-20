@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import JoinRoomDialog from '@/components/JoinRoomDialog'
 import DisplayNameBox from '@/components/DisplayNameBox'
+import ConnectWalletButton from '@/components/ConnectWalletButton'
 
 export default function Home() {
   const router = useRouter()
@@ -82,6 +83,11 @@ export default function Home() {
           {/* Display Name Box */}
           <DisplayNameBox />
 
+          {/* Wallet connect (optional, upgrades account to wallet-backed) */}
+          <div className="mb-3 sm:mb-4 flex justify-center">
+            <ConnectWalletButton />
+          </div>
+
           {/* Main Content Box */}
           <div className="bg-[#FFFFFF] border-2 border-t-[#808080] border-l-[#808080] border-r-[#FFFFFF] border-b-[#FFFFFF] p-3 sm:p-4 mb-3 sm:mb-4">
             <div className="text-xs sm:text-sm text-[#000000] mb-4">
@@ -89,7 +95,7 @@ export default function Home() {
                 <strong>Pulse Chat</strong> is an anonymous-first, room-centric chat platform inspired by the classic chatrooms of the early 2000s.
               </p>
               <p className="mb-2">
-                Tap <strong>"Join Room"</strong> below to browse available chat rooms and start chatting!
+                Tap <strong>&quot;Join Room&quot;</strong> below to browse available chat rooms and start chatting!
               </p>
               <p className="text-[10px] sm:text-xs text-[#666666]">
                 All users are welcome. Please be respectful and follow our community guidelines.

@@ -11,7 +11,7 @@ interface ChattersListProps {
 
 export default function ChattersList({ roomSlug }: ChattersListProps) {
   const { onlineUsersByRoom } = useChatStore()
-  const { user: me } = useMeStore()
+  const { user: me, wallets } = useMeStore()
   const [selectedUser, setSelectedUser] = useState<string | null>(null)
   const [status, setStatus] = useState("I'm Available")
   const [showProfileEditor, setShowProfileEditor] = useState(false)
@@ -89,6 +89,22 @@ export default function ChattersList({ roomSlug }: ChattersListProps) {
           <div className="mb-2 pb-2 border-b border-gray-400">
             <div className="text-xs font-bold mb-1">You:</div>
             <div className="text-xs text-gray-700 mb-1">{me.displayName}</div>
+            <div className="text-[10px] text-gray-600 mb-1">
+              {wallets && wallets.length > 0
+                ? 'Account: Wallet-linked'
+                : 'Account: Anonymous (no wallet linked yet)'}
+            </div>
+            {wallets && wallets.length > 0 && (
+              <div className="text-[10px] text-gray-700 mb-1">
+                {(() => {
+                  const primary =
+                    wallets.find((w) => w.isPrimary) || wallets[0]
+                  return primary
+                    ? `Primary wallet: ${primary.addressTruncated}`
+                    : null
+                })()}
+              </div>
+            )}
             <button
               className="btn-yahoo text-xs px-2 py-1 w-full"
               onClick={() => setShowProfileEditor(true)}

@@ -1,5 +1,6 @@
 import bs58 from 'bs58'
 import { PublicKey } from '@solana/web3.js'
+import nacl from 'tweetnacl'
 
 /**
  * Validate Solana public key format (base58)
@@ -55,7 +56,8 @@ export async function verifyWalletOwnership(
     const signatureBytes = bs58.decode(signature)
     const messageBytes = new TextEncoder().encode(message)
 
-    return publicKey.verify(messageBytes, signatureBytes)
+    // Use nacl to verify the signature
+    return nacl.sign.detached.verify(messageBytes, signatureBytes, publicKey.toBytes())
   } catch {
     return false
   }

@@ -150,7 +150,7 @@ export default function AppPage() {
   useEffect(() => {
     isMountedRef.current = true
     
-    // Initialize Pusher client
+    // Initialize Pusher client with optimized settings for instant delivery
     if (typeof window !== 'undefined') {
       const pusherKey = process.env.NEXT_PUBLIC_PUSHER_KEY
       const pusherCluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER || 'us3'
@@ -159,9 +159,26 @@ export default function AppPage() {
         console.log('[PUSHER] Initializing client with key:', pusherKey.substring(0, 10) + '...', 'cluster:', pusherCluster)
         pusherClientRef.current = new Pusher(pusherKey, {
           cluster: pusherCluster,
+          enabledTransports: ['ws', 'wss'], // Force WebSocket for lowest latency
+          forceTLS: true, // Use secure connection
+          authEndpoint: undefined, // No auth needed for public channels
+        })
+        
+        // Handle connection events
+        pusherClientRef.current.connection.bind('connected', () => {
+          console.log('[PUSHER] ✅ Connected - ready for instant message delivery')
+        })
+        
+        pusherClientRef.current.connection.bind('disconnected', () => {
+          console.warn('[PUSHER] ⚠️ Disconnected - attempting to reconnect...')
+        })
+        
+        pusherClientRef.current.connection.bind('error', (err: any) => {
+          console.error('[PUSHER] ❌ Connection error:', err)
         })
       } else {
-        console.warn('[PUSHER] NEXT_PUBLIC_PUSHER_KEY not found - Pusher will not work')
+        console.error('[PUSHER] ❌ NEXT_PUBLIC_PUSHER_KEY not found - real-time updates disabled')
+        console.error('[PUSHER] Messages will only appear via optimistic updates for current user')
       }
     }
     
@@ -476,22 +493,11 @@ export default function AppPage() {
         console.error('[PUSHER] Failed to set up subscription:', pusherError)
       }
     } else {
-      console.warn('[PUSHER] Pusher client not initialized - check NEXT_PUBLIC_PUSHER_KEY')
-      // Fallback: poll for new messages every 500ms for near-instant updates
-      console.log('[POLLING] Setting up fallback polling (500ms interval)')
-      const pollInterval = setInterval(() => {
-        if (cancelled || !isMountedRef.current) {
-          clearInterval(pollInterval)
-          return
-        }
-        loadInitialMessages()
-      }, 500)
-      
-      return () => {
-        cancelled = true
-        clearInterval(pollInterval)
-        messageIdsRef.current.clear()
-      }
+      console.error('[PUSHER] Pusher client not initialized - messages will only appear via optimistic updates')
+      console.error('[PUSHER] Check NEXT_PUBLIC_PUSHER_KEY environment variable')
+      // No polling fallback - rely on optimistic updates and Pusher only
+      // Messages sent by current user will appear instantly via optimistic updates
+      // Messages from others require Pusher to be configured
     }
 
     return () => {

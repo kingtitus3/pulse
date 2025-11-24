@@ -30,27 +30,47 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
     // Don't allow sending while processing
     if (inputRef.current?.disabled) return
 
-    // Ensure session exists first (non-blocking, will retry on message send if needed)
-    try {
-      const sessionRes = await fetch('/api/session/ensure', {
-        method: 'GET',
-        cache: 'no-store',
-      })
-      if (!sessionRes.ok) {
-        const errorData = await sessionRes.json().catch(() => ({}))
-        console.warn('[SESSION] Failed to ensure session:', sessionRes.status, errorData)
-        // Don't block - try to send message anyway, API will handle auth
-      }
-    } catch (err) {
-      console.warn('[SESSION] Session check failed (non-blocking):', err)
-      // Don't block - try to send message anyway
-    }
-
     // Disable input while sending
     if (inputRef.current) {
       inputRef.current.disabled = true
     }
     setContent('') // Clear immediately
+
+    // OPTIMISTIC UPDATE: Show message instantly before API call
+    const tempId = `temp-${Date.now()}-${Math.random()}`
+    const optimisticMessage = {
+      id: tempId,
+      roomId: '', // Will be set by API response
+      userId: user?.id || '',
+      type: 'text',
+      content: messageContent,
+      mediaUrl: null,
+      createdAt: new Date().toISOString(),
+      user: user ? {
+        id: user.id,
+        displayName: user.displayName,
+        avatar: user.avatar,
+      } : {
+        id: '',
+        displayName: 'You',
+        avatar: null,
+      },
+    }
+
+    // Dispatch optimistic message immediately
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('pulse:new-message', {
+          detail: { message: optimisticMessage, roomSlug },
+        })
+      )
+    }
+
+    // Ensure session exists (truly non-blocking - fire and forget)
+    fetch('/api/session/ensure', {
+      method: 'GET',
+      cache: 'no-store',
+    }).catch(() => {}) // Ignore errors
 
     try {
       const res = await fetch(`/api/rooms/${roomSlug}/messages`, {
@@ -106,13 +126,15 @@ export default function MessageInput({ roomSlug }: MessageInputProps) {
         return
       }
 
-      // Success - parse created message and dispatch local event for instant UI update
+      // Success - parse created message and replace optimistic message with real one
       try {
         const newMessage = await res.json()
         if (newMessage && typeof window !== 'undefined') {
+          // Remove optimistic message and add real one
+          // The real message will replace the temp one via Pusher or the event handler
           window.dispatchEvent(
             new CustomEvent('pulse:new-message', {
-              detail: { message: newMessage, roomSlug },
+              detail: { message: newMessage, roomSlug, replaceTempId: tempId },
             })
           )
         }

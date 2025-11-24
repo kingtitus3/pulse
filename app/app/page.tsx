@@ -64,45 +64,73 @@ export default function AppPage() {
       const detail = event.detail || {}
       const newMsg = detail.message as Message | undefined
       const slug = detail.roomSlug as string | undefined
+      const replaceTempId = detail.replaceTempId as string | undefined
 
       if (!newMsg || !newMsg.id) {
         console.warn('[LOCAL MESSAGE] Invalid message payload:', detail)
         return
       }
 
-      // Ensure it belongs to the current room
-      if (!currentRoom || newMsg.roomId !== currentRoom.id) {
-        return
+      // For optimistic messages (temp IDs), allow them if slug matches
+      const isOptimistic = newMsg.id.startsWith('temp-')
+      
+      if (isOptimistic) {
+        // Optimistic message - only accept if slug matches current room
+        if (slug && slug !== currentRoomSlug) {
+          return
+        }
+        // Set roomId to current room for optimistic messages
+        if (currentRoom) {
+          newMsg.roomId = currentRoom.id
+        }
+      } else {
+        // Real message - ensure it belongs to the current room
+        if (!currentRoom || newMsg.roomId !== currentRoom.id) {
+          return
+        }
+        // If a slug was provided, ensure it matches
+        if (slug && slug !== currentRoomSlug) {
+          return
+        }
       }
-
-      // If a slug was provided, ensure it matches
-      if (slug && slug !== currentRoomSlug) {
-        return
-      }
-
-      // Prevent duplicates
-      if (messageIdsRef.current.has(newMsg.id)) {
-        console.log('[LOCAL MESSAGE] Duplicate message ignored:', newMsg.id)
-        return
-      }
-
-      console.log('[LOCAL MESSAGE] Adding new message to state:', newMsg.id)
-      messageIdsRef.current.add(newMsg.id)
 
       if (!isMountedRef.current) return
 
       setMessages((prev) => {
+        // If replacing a temp message, remove it first
+        if (replaceTempId) {
+          const withoutTemp = prev.filter((m) => m.id !== replaceTempId)
+          // Check if real message already exists
+          if (withoutTemp.some((m) => m.id === newMsg.id)) {
+            return withoutTemp
+          }
+          const updated = [...withoutTemp, newMsg].sort((a, b) =>
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          )
+          console.log('[LOCAL MESSAGE] Replaced temp message:', replaceTempId, 'with:', newMsg.id)
+          return updated
+        }
+
+        // Prevent duplicates
         if (prev.some((m) => m.id === newMsg.id)) {
           return prev
         }
-        // Safety: filter out any messages that don't belong to current room
-        const filtered = prev.filter((m) => m.roomId === currentRoom.id)
+
+        // Safety: filter out any messages that don't belong to current room (except optimistic)
+        const filtered = prev.filter((m) => 
+          m.roomId === currentRoom?.id || m.id.startsWith('temp-')
+        )
         const updated = [...filtered, newMsg].sort((a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         )
         console.log('[LOCAL MESSAGE] Updated messages count:', prev.length, '->', updated.length)
         return updated
       })
+
+      // Track message ID (but not temp IDs)
+      if (!isOptimistic) {
+        messageIdsRef.current.add(newMsg.id)
+      }
 
       // Auto-scroll to bottom
       setTimeout(() => {
@@ -409,8 +437,17 @@ export default function AppPage() {
                 console.log('[PUSHER] Message already in state, skipping:', data.id)
                 return prev
               }
+              
+              // Remove any optimistic (temp) messages with same content/user to avoid duplicates
+              const withoutOptimistic = prev.filter((m) => 
+                !m.id.startsWith('temp-') || 
+                (m.userId !== data.userId || m.content !== data.content)
+              )
+              
               // Also filter out any messages that don't belong to current room (safety check)
-              const filtered = prev.filter((m) => m.roomId === currentRoom.id)
+              const filtered = withoutOptimistic.filter((m) => 
+                m.roomId === currentRoom.id || m.id.startsWith('temp-')
+              )
               const updated = [...filtered, data].sort((a, b) => 
                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
               )
@@ -440,15 +477,15 @@ export default function AppPage() {
       }
     } else {
       console.warn('[PUSHER] Pusher client not initialized - check NEXT_PUBLIC_PUSHER_KEY')
-      // Fallback: poll for new messages every 2 seconds
-      console.log('[POLLING] Setting up fallback polling (2s interval)')
+      // Fallback: poll for new messages every 500ms for near-instant updates
+      console.log('[POLLING] Setting up fallback polling (500ms interval)')
       const pollInterval = setInterval(() => {
         if (cancelled || !isMountedRef.current) {
           clearInterval(pollInterval)
           return
         }
         loadInitialMessages()
-      }, 2000)
+      }, 500)
       
       return () => {
         cancelled = true

@@ -10,6 +10,7 @@ import ProfilePopup from '@/components/ProfilePopup'
 import JoinRoomDialog from '@/components/JoinRoomDialog'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import Pusher from 'pusher-js'
+import { useMeStore } from '@/store/useMeStore'
 
 interface Room {
   id: string
@@ -36,6 +37,7 @@ interface Message {
 export default function AppPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { setMe } = useMeStore()
   
   // Core state
   const [rooms, setRooms] = useState<Room[]>([])
@@ -147,10 +149,28 @@ export default function AppPage() {
     }
   }, [])
 
-  // Step 1: Ensure session exists (non-blocking)
+  // Step 1: Ensure session exists and load user (non-blocking)
   useEffect(() => {
-    fetch('/api/session/ensure').catch(() => {})
-  }, [])
+    const loadUser = async () => {
+      try {
+        // First ensure session exists
+        await fetch('/api/session/ensure').catch(() => {})
+        
+        // Then load user data
+        const res = await fetch('/api/me', { cache: 'no-store' })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.user) {
+            setMe(data) // Pass full data (user + wallets)
+          }
+        }
+      } catch (err) {
+        console.error('[APP] Failed to load user:', err)
+      }
+    }
+    
+    loadUser()
+  }, [setMe])
 
   // Step 2: Load rooms once on mount
   useEffect(() => {

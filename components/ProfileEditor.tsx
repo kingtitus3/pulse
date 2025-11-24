@@ -165,7 +165,29 @@ export default function ProfileEditor({ onClose }: ProfileEditorProps) {
   }
 
   if (!user) {
-    return null
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-yahoo-sidebar border-2 border-yahoo-borderDark max-w-lg w-full shadow-lg">
+          <div className="yahoo-header flex justify-between items-center">
+            <span>Edit Profile</span>
+            <button
+              className="text-yahoo-headerText hover:bg-yahoo-buttonHover px-2 py-1"
+              onClick={onClose}
+            >
+              ×
+            </button>
+          </div>
+          <div className="p-4 bg-yahoo-chatBg">
+            <div className="text-center py-8 text-gray-600">
+              <div className="mb-2">Loading profile...</div>
+              <div className="text-xs text-gray-500">
+                Please wait while we load your profile information.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

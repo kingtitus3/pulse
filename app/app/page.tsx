@@ -95,7 +95,9 @@ export default function AppPage() {
         if (prev.some((m) => m.id === newMsg.id)) {
           return prev
         }
-        const updated = [...prev, newMsg].sort((a, b) =>
+        // Safety: filter out any messages that don't belong to current room
+        const filtered = prev.filter((m) => m.roomId === currentRoom.id)
+        const updated = [...filtered, newMsg].sort((a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         )
         console.log('[LOCAL MESSAGE] Updated messages count:', prev.length, '->', updated.length)
@@ -256,6 +258,8 @@ export default function AppPage() {
       pusherChannelRef.current.unsubscribe()
       pusherChannelRef.current = null
     }
+    // Clear messages and message IDs when switching rooms
+    setMessages([])
     messageIdsRef.current.clear()
 
     let cancelled = false
@@ -281,7 +285,8 @@ export default function AppPage() {
                 msg.id && 
                 msg.user && 
                 msg.user.displayName &&
-                msg.roomId
+                msg.roomId &&
+                msg.roomId === currentRoom.id // Only include messages for current room
             )
 
             const newIds = new Set(validMessages.map(m => m.id))
@@ -371,6 +376,15 @@ export default function AppPage() {
         channel.bind('new-message', (data: Message) => {
           if (cancelled || !isMountedRef.current) return
 
+          // CRITICAL: Only accept messages for the current room
+          if (!currentRoom || data.roomId !== currentRoom.id) {
+            console.log('[PUSHER] Ignoring message from different room:', {
+              messageRoomId: data.roomId,
+              currentRoomId: currentRoom?.id,
+            })
+            return
+          }
+
           console.log('[PUSHER] Received message event:', {
             id: data.id,
             roomId: data.roomId,
@@ -395,7 +409,9 @@ export default function AppPage() {
                 console.log('[PUSHER] Message already in state, skipping:', data.id)
                 return prev
               }
-              const updated = [...prev, data].sort((a, b) => 
+              // Also filter out any messages that don't belong to current room (safety check)
+              const filtered = prev.filter((m) => m.roomId === currentRoom.id)
+              const updated = [...filtered, data].sort((a, b) => 
                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
               )
               console.log('[PUSHER] Updated messages count:', prev.length, '->', updated.length)
